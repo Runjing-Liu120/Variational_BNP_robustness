@@ -20,31 +20,50 @@ def Phi_updates(nu, phi_mu, phi_var, X, sigma_A, sigma_eps, D, N, K, n, k):
 
 # [a,b] = Phi_updates(tau,nu,phi_mu, phi_var,X,sigma_A,sigma_eps,2)
 
-# Multinomial lower bound computation
+# Multinomial lower bound computation.  Tau is a (k + 1) by 2 matrix of beta
+# coefficients, with alpha in the first column and beta in the second.
 def multi_q(tau, k):
-    q = np.zeros(k+1)
-    log_q = np.zeros(k+1)
-    for i in range(k+1):
+    assert tau.shape[0] >= k + 1, \
+        "tau has wrong number of rows %d, k = %d" % (tau.shape[0], k)
+    assert tau.shape[1] == 2, \
+        "tau has wrong number of columns, %d" % tau.shape[1]
+    q = np.zeros(k + 1)
+    log_q = np.zeros(k + 1)
+    for i in range(k + 1):
+        # Note: re-computing the digamma function over and over again is
+        # very computationally wasteful.  Better to compute the digamma of
+        # all the taus once and then express these terms as cumulative sums.
         dum2 = np.sum(sp.special.digamma(tau[0:i, 0]))
         dum3 = np.sum(sp.special.digamma(tau[0:i + 1, 0] + tau[0:i + 1, 1]))
+
+        # Note: may want to re-normalize q before exponentiating to
+        # avoid numeric errors.  That is, accumulate log_q, then subtract the
+        # max, then exponentiate and normalize.
         q[i] = np.exp(sp.special.digamma(tau[i, 1]) + dum2 - dum3)
         log_q[i] = sp.special.digamma(tau[i, 1]) + dum2 - dum3
 
-
-    q = q/np.sum(q) # probability of mutlinomial atoms
+    q = q / np.sum(q) # probability of mutlinomial atoms
     log_q = log_q - sp.misc.logsumexp(log_q) # log probability
 
     q_upper = [np.sum(q[m:]) for m in range(k + 1)]
     return(q, q_upper, log_q)
 
+
 def Exp_lowerbound(tau, k): # lower bound of expectation using multinomial
     [q, q_upper, log_q] = multi_q(tau, k)
-    exp1 = np.dot(q,sp.special.digamma(tau[0:k + 1, 1]))
 
-    exp2 = np.sum(q_upper[m+1]*sp.special.digamma(tau[m, 0]) for m in range(k))
+    # This is E_y[digamma(\tau_{y2})]
+    exp1 = np.dot(q, sp.special.digamma(tau[0:k + 1, 1]))
 
-    exp3 = np.dot(q_upper, sp.special.digamma(tau[0:k + 1, 0]+tau[0:k + 1,1]))
+    # This is E_y[\sum_{m=1}^{y-1} digamma(\tau_{m1})].  Note that in the paper
+    # the empty product in section 3.3 is taken to be one and the empty sum
+    # is taken to be zero.
+    exp2 = np.sum(q_upper[m + 1] * sp.special.digamma(tau[m, 0]) for m in range(k))
 
+    # This is E_y[\sum_{m=1}^{y} digamma(\tau_{m1} + \tau_{m2})].
+    exp3 = np.dot(q_upper, sp.special.digamma(tau[0:k + 1, 0] + tau[0:k + 1, 1]))
+
+    # This is negative the entropy of q.
     exp4 = np.dot(q, log_q)
 
     return(exp1 + exp2 - exp3 - exp4)
