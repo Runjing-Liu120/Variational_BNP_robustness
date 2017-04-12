@@ -40,20 +40,22 @@ class SticksVariationaDistribution(object):
         return self.tau_1 / (self.tau_1 + self.tau_2)
 
     # The multinomial for the lower bound of E_q[log(1 - \prod_{m=1}^k \nu_m )]
+    # except that, here, k is zero-indexed.
     def get_mn_bound_q(self, k):
-        assert k <= len(self.tau_1)
-        y_log_prob = self.y_log_prob_prop[:k]
+        assert k < len(self.tau_1)
+        y_log_prob = self.y_log_prob_prop[:k + 1]
         y_log_prob = y_log_prob - sp.misc.logsumexp(y_log_prob)
         y_prob = np.exp(y_log_prob)
 
         return y_prob, y_log_prob
 
     # The lower bound of E_q[log(1 - \prod_{m=1}^k \nu_m )]
+    # except that, here, k is zero-indexed.
     def e_log_1_m_nu_prod(self, k):
-        assert k <= len(self.tau_1)
+        assert k < len(self.tau_1)
         y_prob, y_log_prob = self.get_mn_bound_q(k)
         y_entropy = -1.0 * np.sum(np.dot(y_prob, y_log_prob))
-        return y_entropy + np.sum(np.dot(y_prob, self.y_log_prob_prop[:k]))
+        return y_entropy + np.sum(np.dot(y_prob, self.y_log_prob_prop[:k + 1]))
 
     # Draw an array of betas with draws in columns and k in rows.
     def draw(self, num_draws):
