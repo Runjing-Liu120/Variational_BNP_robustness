@@ -14,67 +14,79 @@ from beta_process_vb_lib import *
 
 # Data_shape: D,N,K
 
-def phi_updates(nu, phi_mu, phi_var, X, sigmas, Data_shape, n, k):
+def phi_updates(nu, phi_mu, phi_var, X, sigmas, Data_shape):
     
-    sigma_eps = sigmas['eps']
-    sigma_A = sigmas['A']
+    s_eps = sigmas['eps']
+    s_A = sigmas['A']
     D = Data_shape['D']
     N = Data_shape['N']
     K = Data_shape['K']
-
-    phi_var[k] = 1/(1/sigma_A + np.sum(nu[:, k]) / sigma_eps) * np.identity(D)
     
+    for k in range(K):
+        phi_var[k] = (1/s_A + np.sum(nu[:, k]) / s_eps)**(-1) * np.identity(D)
+               
+        phi_summation = 0
+        for n in range(N):
+            phi_dum1 = X[n, :] - np.dot(phi_mu, nu[n, :]) + nu[n, k] * phi_mu[:, k]
+            phi_summation += nu[n,k]*phi_dum1
+        
+        #    dum1 = 0
+        #    for l in range(K):
+        #        if (l != k):
+        #            dum1 += nu[n,l] * phi_mu[:,l]
     
-    Summation = 0
-    for n in range(N):
-        dum1 = X[n, :] - np.dot(phi_mu, nu[n, :]) + nu[n, k] * phi_mu[:, k]
-        Summation += nu[n,k]*dum1
+        #    Summation += nu[n,k] * (X[n,:] - dum1)
     
-    #    dum1 = 0
-    #    for l in range(K):
-    #        if (l != k):
-    #            dum1 += nu[n,l] * phi_mu[:,l]
-
-    #    Summation += nu[n,k] * (X[n,:] - dum1)
-
-    phi_mu[:,k] = 1 / sigma_eps * Summation\
-             * 1 / (1 / sigma_A + np.sum(nu[:, k]) / sigma_eps)
+        phi_mu[:,k] = (1 / s_eps) * phi_summation\
+                 * (1 / s_A + np.sum(nu[:, k]) / s_eps)**(-1)
     
     return(phi_var, phi_mu)
 
-def nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, Data_shape, n, k): 
-    sigma_eps = sigmas['eps']
+def nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, Data_shape): 
+    
+    s_eps = sigmas['eps']
     K = Data_shape['K']
+    N = Data_shape['N']
+    
+    tmp = deepcopy(nu)
+    
+    for n in range(N):
+        for k in range(K):
+                
+            nu_term1 = sp.special.digamma(tau[k,0]) - sp.special.digamma(tau[k,1])  
+            
+            nu_term2 = (1. / (2. * s_eps)) * (np.trace(phi_var[k]) + np.dot(phi_mu[:, k], phi_mu[:, k]))
+            
+            
+            #nu_term3 = (1./s_eps) * np.dot(phi_mu[:, k], X[n, :] - np.dot(phi_mu, tmp[n, :]) + tmp[n,k] * phi_mu[:, k])
+            
+            #if k==4 and n==3:
+            #    print(nu_term2,nu_term3)
 
-    Term1 = sp.special.digamma(tau[k,0]) - sp.special.digamma(tau[k,1])  
-    
-    Term2 = 1 / (2 * sigma_eps) * (np.trace(phi_var[k]) + \
-        np.dot(phi_mu[:, k], phi_mu[:, k]))
-    
-    Term3 = 1/sigma_eps * np.dot(phi_mu[:, k], X[n, :] - \
-                    np.dot(phi_mu, nu[n, :]) + nu[n, k] * phi_mu[:, k])
-    
-    #explit calculation of Term3
-    #dum = 0
-    #for l in range(K):
-    #    if (l != k):
-    #        dum += nu[n,l] * phi_mu[:,l]
-
-    #Term3 = 1 / sigma_eps * np.dot( phi_mu[:, k], X[n,:] - dum)
-    
-    script_V = Term1 - Term2 + Term3
-    
-    nu[n,k] = 1/(1+np.exp(-script_V))
+            #explit calculation of Term3
+            dum = 0
+            for l in range(K):
+                if (l != k):
+                    dum += tmp[n,l] * phi_mu[:,l]
+        
+            nu_term3 = (1 / s_eps) * np.dot(phi_mu[:, k], X[n,:] - dum)
+            
+            if k==4 and n==3:
+                print(nu_term3)
+                
+            script_V = nu_term1 - nu_term2 + nu_term3
+            
+            nu[n,k] = 1./(1.+np.exp(-script_V))
     
     return(nu)
     
     
-def tau_updates(tau, nu, alpha, Data_shape, n, k): 
+def tau_updates(tau, nu, alpha, Data_shape): 
     K = Data_shape['K']
     N = Data_shape['N']
 
-    tau[k,0] = alpha/K + np.sum(nu[:,k])
-    tau[k,1] = N + 1  - np.sum(nu[:,k])
+    tau[:,0] = alpha/K + np.sum(nu,0)
+    tau[:,1] = N  + 1 - np.sum(nu,0)
     
     return(tau)
 
@@ -87,21 +99,21 @@ def Elbo(tau, nu, phi_mu, phi_var, X, sigmas, Data_shape, alpha):
     K = Data_shape['K']
 
     # bernoulli terms 
-    Term1 = np.sum( np.log(alpha/K) + (alpha/K - 1)*(sp.special.digamma(tau[k,0]) \
+    eblo_term1 = np.sum( np.log(alpha/K) + (alpha/K - 1)*(sp.special.digamma(tau[k,0]) \
                   - sp.special.digamma(tau[k,0] + tau[k, 1])) for k in range(K)) 
     
-    Term2 = 0
+    eblo_term2 = 0
     for k in range(K):
         for n in range(N): 
-            Term2 += nu[n,k] * sp.special.digamma(tau[k,0]) + (1-nu[n,k])*\
+            eblo_term2 += nu[n,k] * sp.special.digamma(tau[k,0]) + (1-nu[n,k])*\
                     sp.special.digamma(tau[k,1]) \
                     - sp.special.digamma(tau[k,0]+tau[k,1])
     
-    Term3 = np.sum(-D/2*np.log(2*np.pi*sigma_A) - 1/(2*sigma_A) *\
+    eblo_term3 = np.sum(-D/2*np.log(2*np.pi*sigma_A) - 1/(2*sigma_A) *\
         (np.trace(phi_var[k]) + \
         np.dot(phi_mu[:, k] , phi_mu[:, k])) for k in range(K) )
     
-    Term4 = 0
+    eblo_term4 = 0
     for n in range(N):
         summ1 = np.sum(nu[n,k] * np.dot(phi_mu[:,k], X[n,:]) for k in range(K))
         summ2 = np.sum(
@@ -111,20 +123,20 @@ def Elbo(tau, nu, phi_mu, phi_var, X, sigmas, Data_shape, alpha):
         summ3 = np.sum(nu[n,k] * (np.trace(phi_var[k]) + \
             np.dot(phi_mu[:,k], phi_mu[:,k])) for k in range(K))
 
-        Term4 += - D / 2 * np.log(2 * np.pi * sigma_eps) - \
+        eblo_term4 += - D / 2 * np.log(2 * np.pi * sigma_eps) - \
             1 / (2 * sigma_eps) * (
                 np.dot(X[n,:], X[n,:]) - 2 * summ1 + 2 * summ2 + summ3)
     
-    Term5 = np.sum(sp.special.betaln(tau[:,0],tau[:,1]) - \
+    eblo_term5 = np.sum(sp.special.betaln(tau[:,0],tau[:,1]) - \
         (tau[:,0] - 1) * sp.special.digamma(tau[:,0]) - \
         (tau[:,1] - 1) * sp.special.digamma(tau[:,1]) + \
         (tau[:,0] + tau[:,1] -2) *  sp.special.digamma(tau[:,0] + tau[:,1]))
 
-    Term6 = np.sum(1 / 2 * np.log((2 * np.pi * np.exp(1)) ** D * \
+    eblo_term6 = np.sum(1 / 2 * np.log((2 * np.pi * np.exp(1)) ** D * \
         np.linalg.det(phi_var[k])) for k in range(K))
 
-    Term7 = np.sum(np.sum( -np.log(nu ** nu) - np.log((1-nu) ** (1-nu)) ))
+    eblo_term7 = np.sum(np.sum( -np.log(nu ** nu) - np.log((1-nu) ** (1-nu)) ))
 
-    elbo = Term1 + Term2 + Term3 + Term4 + Term5 + Term6 + Term7
+    elbo = eblo_term1 + eblo_term2 + eblo_term3 + eblo_term4 + eblo_term5 + eblo_term6 + eblo_term7
 
-    return(elbo, Term1, Term2, Term3, Term4, Term5, Term6, Term7)
+    return(elbo, eblo_term1, eblo_term2, eblo_term3, eblo_term4, eblo_term5, eblo_term6, eblo_term7)
