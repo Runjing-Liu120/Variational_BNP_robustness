@@ -23,7 +23,7 @@ DRAW DATA
 
 Num_samples = 500 # sample size
 D = 2 # dimension
-# so X will be a n\times D matrix
+# so X will be a N\times D matrix
 
 K_inf = 3 # take to be large for a good approximation to the IBP
 

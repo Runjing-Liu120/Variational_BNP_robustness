@@ -7,10 +7,12 @@ Created on Mon Apr 17 11:10:41 2017
 
 import numpy as np
 import scipy as sp
+import scipy.special
 import matplotlib.pyplot as plt
 from copy import deepcopy
 import math
-from beta_process_vb_lib import *
+
+# from beta_process_vb_lib import *
 
 # Data_shape: D,N,K
 

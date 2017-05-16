@@ -171,15 +171,10 @@ Data_shape = {'D':D, 'N': Num_samples , 'K':K_approx}
 sigmas = {'eps': sigma_eps, 'A': sigma_A}
 
 # initialization for cavi updates
-#tau = np.random.uniform(10,100,[K_approx,2])
-tau = np.ones([K_approx,2])*1000
-tau[:,1] = (tau[:,0] - Pi*tau[:,0])/Pi
+tau = np.random.uniform(10,100,[K_approx,2])
+nu = np.random.uniform(0,1,[Num_samples,K_approx])
 
-#nu = np.random.uniform(0,1,[Num_samples,K_approx])
-nu = deepcopy(Z)
-
-phi_mu = deepcopy(A.T)
-#phi_mu = np.random.normal(0,1,[D,K_approx])
+phi_mu = np.random.normal(0,1,[D,K_approx])
 phi_var = np.ones(K_approx)
 
 """
