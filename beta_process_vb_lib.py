@@ -39,12 +39,14 @@ def multi_q(tau, k):
         # Note: may want to re-normalize q before exponentiating to
         # avoid numeric errors.  That is, accumulate log_q, then subtract the
         # max, then exponentiate and normalize.
-        q[i] = np.exp(sp.special.digamma(tau[i, 1]) + dum2 - dum3)
+        
+        # q[i] = np.exp(sp.special.digamma(tau[i, 1]) + dum2 - dum3)
         log_q[i] = sp.special.digamma(tau[i, 1]) + dum2 - dum3
 
-    q = q / np.sum(q) # probability of mutlinomial atoms
+    # q = q / np.sum(q) # probability of mutlinomial atoms
     log_q = log_q - sp.misc.logsumexp(log_q) # log probability
-
+    q = np.exp(log_q) 
+    
     q_upper = [np.sum(q[m:]) for m in range(k + 1)]
     return(q, q_upper, log_q)
 
@@ -110,17 +112,17 @@ def Nu_updates(Expectation_k, tau, nu, phi_mu, phi_var, sigma_eps, X, D, N, K, n
 
 
 def Tau_updates(tau, nu, alpha, D, N, K, n, k):
-    dummy4 = 0
+    dummy4 = alpha
     for m in range(k + 1, K):
         [q,q_upper, log_q] = multi_q(tau,m)
-        dummy4 = dummy4 + (N - np.sum(nu[:,m])) * q_upper[k + 1]
+        dummy4 += (N - np.sum(nu[:,m])) * q_upper[k + 1]
 
-    tau[k, 0]= alpha + np.sum(np.sum(nu[:, m]) for m in np.arange(k, K)) + dummy4
+    tau[k, 0]= np.sum(np.sum(nu[:, m]) for m in np.arange(k, K)) + dummy4
 
     dummy5 = 1
     for m in range(k,K):
         [q,q_upper,log_q] = multi_q(tau,m)
-        dummy5 = dummy5 + (N - np.sum(nu[:,m]))*q[k]
+        dummy5 += (N - np.sum(nu[:,m]))*q[k]
 
     tau[k,1] = dummy5
 
@@ -133,15 +135,13 @@ def Elbo(tau, nu, phi_mu, phi_var, X, sigma_A, sigma_eps, alpha, D, K, N):
 
     Term2 = 0
     for k in range(K):
-        Expectation = Exp_true(tau,k)
+        Expectation = Exp_lowerbound(tau,k)
         for n in range(N):
 
-            asdf = nu[n, k] * np.sum(sp.special.digamma(tau[0:k + 1, 1]) - \
+            Term2 += nu[n, k] * np.sum(sp.special.digamma(tau[0:k + 1, 1]) - \
                 sp.special.digamma(tau[0:k + 1, 0] + tau[0:k + 1, 1])) + \
                 (1 - nu[n,k]) * Expectation
-
-            Term2 = Term2 + asdf
-
+            #Term2 = (1 - nu[n,k]) * Expectation
     Term3 = np.sum(-D/2*np.log(2*np.pi*sigma_A) - 1/(2*sigma_A) *\
         np.array([np.trace(phi_var[k]) + \
         np.dot(phi_mu[:, k] , phi_mu[:, k]) for k in range(K)]))
@@ -169,7 +169,7 @@ def Elbo(tau, nu, phi_mu, phi_var, X, sigma_A, sigma_eps, alpha, D, K, N):
     Term6 = np.sum([1 / 2 * np.log((2 * np.pi * np.exp(1)) ** D * \
         np.linalg.det(phi_var[k])) for k in range(K)])
 
-    Term7 = np.sum(np.sum(-nu*np.log(nu) - (1-nu)*np.log(1-nu)))
+    Term7 = np.sum(np.sum( -np.log(nu**nu) - np.log((1-nu)**(1-nu)) ))
 
     elbo = Term1 + Term2 + Term3 + Term4 + Term5 + Term6 + Term7
 

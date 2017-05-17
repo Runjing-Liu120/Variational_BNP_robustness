@@ -11,7 +11,7 @@ from copy import deepcopy
 
 from beta_process_vb_lib import *
 
-# np.random.seed(50)
+np.random.seed(500)
 
 
 N = 500 # sample size
@@ -29,7 +29,7 @@ Z = np.zeros([N,K_inf])
 mu = np.zeros(D)
 sigma_A = 1
 
-sigma_eps = 0.5 # variance of noise
+sigma_eps = 0.05 # variance of noise
 
 # Draw Z from truncated stick breaking process
 for k in range(K_inf):
@@ -57,7 +57,7 @@ K = 5 # variational truncation
 
 
 # Variational parameters
-tau = np.random.uniform(0,1,[K,2]) # tau1, tau2 -- beta parameters for v
+tau = np.random.uniform(0,500,[K,2]) # tau1, tau2 -- beta parameters for v
 nu = np.random.uniform(0,1,[N,K]) # Bernoulli parameter for z_nk
 #nu = deepcopy(Z)
 phi_mu = np.random.normal(0,1,[D,K]) # kth mean (D dim vector) in kth column
@@ -65,7 +65,7 @@ phi_mu = np.random.normal(0,1,[D,K]) # kth mean (D dim vector) in kth column
 phi_var = {k: np.identity(D) for k in range(K)}
 
 
-    # Term7 and term 5 give NaNs. Term7 bc nu is close to 1; term 5 bc tau's are large!?
+
 iterations = 100
 elbo = np.zeros(iterations)
 Term1 = np.zeros(iterations)
@@ -86,9 +86,9 @@ for i in np.arange(iterations):
         tau = Tau_updates(tau,nu,alpha,D,N,K,n,k)
 
     for k in np.arange(K):
-        Expectation_k = Exp_true(tau,k)
+        Expectation_k = Exp_lowerbound(tau,k)
         for n in np.arange(N):
-            nu = Nu_updates(Expectation_k,tau,nu,phi_mu,phi_var,X,D,N,K,n,k)
+            nu = Nu_updates(Expectation_k, tau, nu, phi_mu, phi_var, sigma_eps, X, D, N, K, n, k)
 
     for k in np.arange(K):
         [phi_var, phi_mu] = Phi_updates(nu,phi_mu,phi_var,X,sigma_A,sigma_eps,D,N,K,n,k)
