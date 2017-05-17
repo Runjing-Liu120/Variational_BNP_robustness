@@ -23,7 +23,7 @@ class TestParameters(unittest.TestCase):
         stick_log_means = np.mean(np.log(draws), 1)
         np_test.assert_allclose(stick_log_means, sticks.e_log(), 1e-3)
 
-        # Test the lower bounds
+        # Test the lower bounds.
         for k in range(k_max):
             y_prob, y_log_prob = sticks.get_mn_bound_q(k)
             self.assertAlmostEqual(np.sum(y_prob), 1.0)
@@ -33,7 +33,6 @@ class TestParameters(unittest.TestCase):
             draws_prod = np.prod(draws[:k + 1, :], 0)
             true_e = np.mean(np.log(1 - draws_prod))
             self.assertTrue(lb <= true_e)
-
 
 
 if __name__ == '__main__':
