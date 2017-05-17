@@ -5,15 +5,15 @@ import matplotlib.pyplot as plt
 from copy import deepcopy
 
 # Update functions
-def Phi_updates(nu, phi_mu, phi_var, X, sigma_A, sigma_eps, D, N, K, n, k):
-    phi_var[k] = 1/(1/sigma_A + np.sum(nu[:, k]) / sigma_eps) * np.identity(D)
+def phi_updates(nu, phi_mu, phi_var, X, sigma_A, sigma_eps, D, N, K, n, k):
+    phi_var[k] = 1 / (1 / sigma_A + np.sum(nu[:, k]) / sigma_eps) * np.identity(D)
     Summation = 0
     for n in range(N):
         dum1 = X[n, :] - np.dot(phi_mu, nu[n, :]) + nu[n, k] * phi_mu[:, k]
-        Summation = nu[n,k] * dum1 + Summation
+        summation = nu[n,k] * dum1 + summation
 
     phi_mu[:,k] = \
-        1 / sigma_eps * Summation * 1 / (1 / sigma_A + np.sum(nu[:, k]) / sigma_eps)
+        1 / sigma_eps * summation * 1 / (1 / sigma_A + np.sum(nu[:, k]) / sigma_eps)
 
     return(phi_var, phi_mu)
 
@@ -173,5 +173,5 @@ def Elbo(tau, nu, phi_mu, phi_var, X, sigma_A, sigma_eps, alpha, D, K, N):
 
     elbo = Term1 + Term2 + Term3 + Term4 + Term5 + Term6 + Term7
 
-    return(elbo, Term1, Term2, Term3, Term4, Term5, Term6, Term7)
+    return elbo, Term1, Term2, Term3, Term4, Term5, Term6, Term7
     #return(Term7)
