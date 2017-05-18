@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from copy import deepcopy
 import math
 
+
 # from beta_process_vb_lib import *
 
 # Data_shape: D,N,K
@@ -41,6 +42,7 @@ def phi_updates(nu, phi_mu, phi_var, X, sigmas, k):
 
     phi_mu[:,k] = (1 / s_eps) * phi_summation\
         * (1 / s_A + np.sum(nu[:, k]) / s_eps)**(-1)
+    
     
 def nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k):   
     s_eps = sigmas['eps']
