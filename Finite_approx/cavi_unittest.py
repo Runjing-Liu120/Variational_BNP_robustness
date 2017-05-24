@@ -117,6 +117,7 @@ class TestCaviUpdates(unittest.TestCase):
 
                 # print(np.abs(nu[n,k] - nu_AG[n,k]))
                 self.assertAlmostEqual(nu[n,k] , nu_AG[n,k])
+                
     def test_tau_updates(self):
         # initialization for cavi updates
         tau = np.random.uniform(10,100,[K_approx,2])
@@ -190,11 +191,11 @@ class TestCaviUpdates(unittest.TestCase):
             phi_updates(nu, phi_mu, phi_var, X, sigmas, k) # cavi updates
 
 
-            print('mean computed by autodiff: \n', phi_mu_AG[:,k])
-            print('mean computed by cavi: \n', phi_mu[:,k])
-            print('variance computed by autodiff: ', phi_var_AG[k])
-            print('variance computed by cavi    : ', phi_var[k])
-            print('\n')
+            #print('mean computed by autodiff: \n', phi_mu_AG[:,k])
+            #print('mean computed by cavi: \n', phi_mu[:,k])
+            #print('variance computed by autodiff: ', phi_var_AG[k])
+            #print('variance computed by cavi    : ', phi_var[k])
+            #print('\n')
 
             self.assertTrue(np.allclose(phi_mu_AG[:,k], phi_mu[:,k]))
             self.assertTrue(np.allclose(phi_var_AG[k], phi_var[k]))

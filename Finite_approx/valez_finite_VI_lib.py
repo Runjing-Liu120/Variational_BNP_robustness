@@ -7,6 +7,10 @@ Created on Mon Apr 17 11:10:41 2017
 
 import autograd.numpy as np
 import autograd.scipy as sp
+#from scipy.special import betaln
+#import numpy as np
+#import scipy as sp
+
 # import scipy.special
 import matplotlib.pyplot as plt
 from copy import deepcopy
@@ -44,15 +48,12 @@ def phi_updates(nu, phi_mu, phi_var, X, sigmas, k):
         * (1 / s_A + np.sum(nu[:, k]) / s_eps)**(-1)
 
 
-def nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k):
+def nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k, digamma_tau):
     s_eps = sigmas['eps']
     s_A = sigmas['A']
     D = np.shape(X)[1]
     N = np.shape(X)[0]
     K = np.shape(phi_mu)[1]
-
-    digamma_tau = sp.special.digamma(tau)
-
 
     #nu_term1 = sp.special.digamma(tau[k,0]) - sp.special.digamma(tau[k,1])
 
@@ -104,10 +105,12 @@ def cavi_updates(tau, nu, phi_mu, phi_var, X, alpha, sigmas):
     assert np.shape(X)[0] == np.shape(nu)[0]
     assert np.shape(X)[1] == np.shape(phi_mu)[0]
     assert np.shape(nu)[1] == np.shape(phi_mu)[1]
-
+    
+    digamma_tau = sp.special.digamma(tau)
+    
     for n in range(N):
         for k in range(K):
-            nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k)
+            nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k, digamma_tau)
 
     for k in range(K):
         phi_updates(nu, phi_mu, phi_var, X, sigmas, k)
@@ -168,10 +171,15 @@ def compute_elbo(tau, nu, phi_mu, phi_var, X, sigmas, alpha):
 #        (tau[:,0] - 1) * sp.special.digamma(tau[:,0]) - \
 #        (tau[:,1] - 1) * sp.special.digamma(tau[:,1]) + \
 #        (tau[:,0] + tau[:,1] -2) *  sp.special.digamma(tau[:,0] + tau[:,1]))
-#    log_beta = sp.special.betaln(tau[:,0],tau[:,1])
 
-    log_beta = np.log( (digamma_tau[:,0] * digamma_tau[:,0])/\
-            digamma_sum_tau[:])
+    #log_beta = betaln(tau[:,0],tau[:,1]) # apparently this isn't in autograd.scipy
+
+    log_beta = sp.special.gammaln(tau[:,0]) + sp.special.gammaln(tau[:,1]) \
+        - sp.special.gammaln(tau[:,0] + tau[:,1])
+
+    # log_beta = np.log(\
+    #        (sp.special.gamma(tau[:,0]) * sp.special.gamma(tau[:,1]) )/\
+    #        sp.special.gamma(tau[:,0] + tau[:,1]) )
 
     elbo_term5 = np.sum(log_beta - \
         (tau[:,0] - 1) * digamma_tau[:,0] - \
