@@ -128,27 +128,36 @@ def compute_elbo(tau, nu, phi_mu, phi_var, X, sigmas, alpha):
     return(elbo, elbo_term1, elbo_term2, elbo_term3, elbo_term4, elbo_term5, elbo_term6, elbo_term7)
 
 
-def generate_data(Num_samples, D, K_inf, sigma_A, sigma_eps):
-    Pi = np.ones(K_inf) * .8
-    Z = np.zeros([Num_samples, K_inf])
+def exp_log_likelihood(nu_moment, phi_moment1, phi_moment2, \
+                       E_log_pi1, E_log_pi2, Data_shape, sigmas, X, alpha):
 
-    # Parameters to draw A from MVN
-    mu = np.zeros(D)
+    sigma_eps = sigmas['eps']
+    sigma_A = sigmas['A']
+    D = Data_shape['D']
+    N = Data_shape['N']
+    K = Data_shape['K']
 
-    # Draw Z from truncated stick breaking process
-    Z = np.random.binomial(1, Pi, [ Num_samples, K_inf ])
+    beta_lh = (alpha/K - 1.)*np.sum(E_log_pi1)
+    bern_lh = np.sum(np.dot(nu_moment[n,:], E_log_pi1) \
+                            + np.dot(1.-nu_moment[n,:], E_log_pi2) for n in range(N))
+    Normal_A = -1/(2.*sigma_A) * np.sum(phi_moment2)
 
-    # Draw A from multivariate normal
-    A = np.random.multivariate_normal(mu, sigma_A * np.identity(D), K_inf)
+    Normal_X_sum = 0
+    ## compute the data likelihood term
+    for n in range(N):
+        dum1 = 2.*np.sum(np.sum(nu_moment[n,i] * nu_moment[n,j] * np.dot(phi_moment1[:,i],phi_moment1[:,j]) \
+                                for i in range(j)) for j in range(K))
+        dum2 = np.dot(nu_moment[n,:] , phi_moment2 )
 
-    # draw noise
-    epsilon = np.random.multivariate_normal(
-        np.zeros(D), sigma_eps*np.identity(D), Num_samples)
+        dum3 = -2. * np.dot(X[n,:], np.dot(phi_moment1, nu_moment[n,:]))
 
-    # the observed data
-    X = np.dot(Z,A) + epsilon
+        # dum4 = np.dot(X[n,:], X[n,:])
+        Normal_X_sum += dum1 + dum2 + dum3
 
-    return Pi, Z, mu, A, X
+    Normal_X = -1/(2*sigma_eps)*Normal_X_sum
+
+    y = beta_lh + bern_lh + Normal_A + Normal_X
+    return(y)
 
 
 def initialize_parameters(Num_samples, D, K_approx):
