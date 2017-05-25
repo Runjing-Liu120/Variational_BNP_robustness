@@ -105,9 +105,9 @@ def cavi_updates(tau, nu, phi_mu, phi_var, X, alpha, sigmas):
     assert np.shape(X)[0] == np.shape(nu)[0]
     assert np.shape(X)[1] == np.shape(phi_mu)[0]
     assert np.shape(nu)[1] == np.shape(phi_mu)[1]
-    
+
     digamma_tau = sp.special.digamma(tau)
-    
+
     for n in range(N):
         for k in range(K):
             nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k, digamma_tau)
@@ -130,47 +130,51 @@ def compute_elbo(tau, nu, phi_mu, phi_var, X, sigmas, alpha):
     digamma_sum_tau = sp.special.digamma(tau[:,0] + tau[:,1])
 
     # bernoulli terms
+    elbo_term1 = (alpha/K - 1) * np.sum( digamma_tau[:,0] - digamma_sum_tau[:] )
 
-    #elbo_term1 = np.sum( np.log(alpha/K) + (alpha/K - 1)*(sp.special.digamma(tau[k,0]) \
-    #              - sp.special.digamma(tau[k,0] + tau[k, 1])) for k in range(K))
+#    elbo_term2 = 0.
+#    for k in range(K):
+#        for n in range(N):
+#            elbo_term2 = elbo_term2 + nu[n,k] * digamma_tau[k,0] + (1.-nu[n,k])*\
+#                    digamma_tau[k,1] - digamma_sum_tau[k]
 
-    elbo_term1 = np.sum( np.log(alpha/K) + (alpha/K - 1)*(digamma_tau[k,0] \
-                  - digamma_sum_tau[k]) for k in range(K) )
+    elbo_term2 = np.sum(np.dot(nu, digamma_tau[:,0]) + np.dot(1-nu, digamma_tau[:,1])) \
+                - N * np.sum(digamma_sum_tau)
 
-    elbo_term2 = 0.
-    for k in range(K):
-        for n in range(N):
-            #elbo_term2 += nu[n,k] * sp.special.digamma(tau[k,0]) + (1-nu[n,k])*\
-            #        sp.special.digamma(tau[k,1]) \
-            #        - sp.special.digamma(tau[k,0]+tau[k,1])
 
-            elbo_term2 = elbo_term2 + nu[n,k] * digamma_tau[k,0] + (1.-nu[n,k])*\
-                    digamma_tau[k,1] - digamma_sum_tau[k]
+#    elbo_term3 = np.sum(\
+#        -D/2.*np.log(2.*np.pi*sigma_A) - 1./(2.*sigma_A) *\
+#        (phi_var[k]*D + \
+#        np.dot(phi_mu[:, k] , phi_mu[:, k])) for k in range(K) )
 
-    elbo_term3 = np.sum(\
-        -D/2.*np.log(2.*np.pi*sigma_A) - 1./(2.*sigma_A) *\
-        (phi_var[k]*D + \
-        np.dot(phi_mu[:, k] , phi_mu[:, k])) for k in range(K) )
+    elbo_term3 = \
+        -K*D/2.*np.log(2.*np.pi*sigma_A) - 1./(2.*sigma_A) *\
+        (np.sum(phi_var)*D + np.trace(np.dot(phi_mu.T , phi_mu)))
 
-    elbo_term4 = 0.
 
-    for n in range(N):
-        summ1 = np.sum(
-            nu[n,k] * np.dot(phi_mu[:,k], X[n,:]) for k in range(K))
-        summ2 = np.sum(
-                np.sum(
-                nu[n,k1] * nu[n,k2] * np.dot(phi_mu[:,k1], phi_mu[:,k2]) \
-                for k1 in range(k2) ) for k2 in range(K))
-        summ3 = np.sum(nu[n,k] * (D*phi_var[k] + \
-            np.dot(phi_mu[:,k], phi_mu[:,k])) for k in range(K))
+#    elbo_term4 = 0.
+#
+#    for n in range(N):
+#        summ1 = np.sum(
+#            nu[n,k] * np.dot(phi_mu[:,k], X[n,:]) for k in range(K))
+#        summ2 = np.sum(
+#                np.sum(
+#                nu[n,k1] * nu[n,k2] * np.dot(phi_mu[:,k1], phi_mu[:,k2]) \
+#                for k1 in range(k2) ) for k2 in range(K))
+#        summ3 = np.sum(nu[n,k] * (D*phi_var[k] + \
+#            np.dot(phi_mu[:,k], phi_mu[:,k])) for k in range(K))
 
-        elbo_term4 = elbo_term4 - D / 2. * np.log(2. * np.pi * sigma_eps) - \
-           1. / (2. * sigma_eps) * (np.dot(X[n,:], X[n,:]) - 2. * summ1 + 2. * summ2 + summ3)
+#        elbo_term4 = elbo_term4 - D / 2. * np.log(2. * np.pi * sigma_eps) - \
+#           1. / (2. * sigma_eps) * (np.dot(X[n,:], X[n,:]) - 2. * summ1 + 2. * summ2 + summ3)
 
-#    elbo_term5 = np.sum(sp.special.betaln(tau[:,0],tau[:,1]) - \
-#        (tau[:,0] - 1) * sp.special.digamma(tau[:,0]) - \
-#        (tau[:,1] - 1) * sp.special.digamma(tau[:,1]) + \
-#        (tau[:,0] + tau[:,1] -2) *  sp.special.digamma(tau[:,0] + tau[:,1]))
+    elbo_term4 = \
+        -N * D/2. * np.log(2. * np.pi * sigma_eps)\
+        -1/(2. * sigma_eps) * np.trace(np.dot(X.T, X)) \
+        +1/(sigma_eps) * np.trace(np.dot(np.dot(nu, phi_mu.T), X.T))\
+        -1/(2. * sigma_eps) * np.sum(np.dot(nu, D*phi_var + np.diag(np.dot(phi_mu.T, phi_mu)))) \
+        -1/(2.*sigma_eps) * np.trace(np.dot(np.dot(nu, np.dot(phi_mu.T, phi_mu) - np.identity(K) \
+                                                    * np.diag(np.dot(phi_mu.T, phi_mu))), nu.T))\
+
 
     #log_beta = betaln(tau[:,0],tau[:,1]) # apparently this isn't in autograd.scipy
 
@@ -186,8 +190,10 @@ def compute_elbo(tau, nu, phi_mu, phi_var, X, sigmas, alpha):
         (tau[:,1] - 1) * digamma_tau[:,1] + \
         (tau[:,0] + tau[:,1] -2.) *  digamma_sum_tau[:])
 
-    elbo_term6 = np.sum(1. / 2. * np.log((2. * np.pi * np.exp(1.)) ** D * \
-        phi_var[k]**D) for k in range(K))
+#    elbo_term6 = np.sum(1. / 2. * np.log((2. * np.pi * np.exp(1.)) ** D * \
+#        phi_var[k]**D) for k in range(K))
+    elbo_term6 = np.sum(1. / 2. * np.log((2. * np.pi * np.exp(1.) * \
+        phi_var)**D))
 
     elbo_term7 = np.sum(np.sum( -np.log(nu ** nu) - np.log((1.-nu) ** (1.-nu)) ))
 
