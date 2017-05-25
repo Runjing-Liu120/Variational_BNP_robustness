@@ -58,24 +58,6 @@ sigma_A = 100
 
 sigma_eps = 1 # variance of noise
 
-# Draw Z from truncated stick breaking process
-# for k in range(k_inf):
-#     Pi[k] = np.random.beta(alpha/k_inf,1)
-#     for n in range(num_samples):
-#         Z[n,k] = np.random.binomial(1,Pi[k])
-
-# Draw A from multivariate normal
-# A = np.random.multivariate_normal(mu, sigma_A*np.identity(D), k_approx)
-#A = np.random.normal(0, np.sqrt(sigma_A), (k_approx,D))
-
-# draw noise
-# epsilon = np.random.multivariate_normal(np.zeros(D), sigma_eps*np.identity(D), num_samples)
-#epsilon = np.random.normal(0, np.sqrt(sigma_eps), (num_samples, D))
-
-# the observed data
-#X = np.dot(Z,A) + epsilon
-
-
 Pi, Z, mu, A, X = generate_data(num_samples, D, k_inf, sigma_A, sigma_eps)
 
 k_approx = k_inf # variational truncation
@@ -103,7 +85,7 @@ class TestCaviUpdates(unittest.TestCase):
         E_log_pi1 = sp.special.digamma(tau[:,0]) - sp.special.digamma(tau[:,0] + tau[:,1])
         E_log_pi2 = sp.special.digamma(tau[:,1]) - sp.special.digamma(tau[:,0] + tau[:,1])
 
-
+        digamma_tau = sp.special.digamma(tau)
         for n in range(num_samples):
             for k in range(k_approx):
 
@@ -112,7 +94,7 @@ class TestCaviUpdates(unittest.TestCase):
                                E_log_pi1, E_log_pi2, data_shape, sigmas, X, alpha)
                 nu_AG = 1/(1 + np.exp(-script_V_AG))
 
-                nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k)
+                nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k, digamma_tau)
 
                 # print(np.abs(nu[n,k] - nu_AG[n,k]))
                 self.assertAlmostEqual(nu[n,k] , nu_AG[n,k])
