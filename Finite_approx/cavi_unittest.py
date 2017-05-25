@@ -1,3 +1,5 @@
+#!/usr/bin/python
+
 # First unit test-- check CAVI updates
 
 import unittest
@@ -8,13 +10,13 @@ import autograd.scipy as sp
 from copy import deepcopy
 
 def exp_log_likelihood(nu_moment, phi_moment1, phi_moment2, \
-                       E_log_pi1, E_log_pi2, Data_shape, sigmas, X, alpha):
+                       E_log_pi1, E_log_pi2, data_shape, sigmas, X, alpha):
 
     sigma_eps = sigmas['eps']
     sigma_A = sigmas['A']
-    D = Data_shape['D']
-    N = Data_shape['N']
-    K = Data_shape['K']
+    D = data_shape['D']
+    N = data_shape['N']
+    K = data_shape['K']
 
     beta_lh = (alpha/K - 1.)*np.sum(E_log_pi1)
     bern_lh = np.sum(np.dot(nu_moment[n,:], E_log_pi1) \
@@ -39,16 +41,16 @@ def exp_log_likelihood(nu_moment, phi_moment1, phi_moment2, \
     return(y)
 
 # Draw Data
-Num_samples = 10 # sample size
+num_samples = 10 # sample size
 D = 2 # dimension
 # so X will be a n\times D matrix
 
-K_inf = 3 # take to be large for a good approximation to the IBP
-K_approx = deepcopy(K_inf)
+k_inf = 3 # take to be large for a good approximation to the IBP
+k_approx = k_inf
 
 alpha = 2 # IBP parameter
-Pi = np.zeros(K_inf)
-Z = np.zeros([Num_samples,K_inf])
+# Pi = np.zeros(k_inf)
+# Z = np.zeros([num_samples,k_inf])
 
 # Parameters to draw A from MVN
 mu = np.zeros(D)
@@ -57,43 +59,40 @@ sigma_A = 100
 sigma_eps = 1 # variance of noise
 
 # Draw Z from truncated stick breaking process
-for k in range(K_inf):
-    Pi[k] = np.random.beta(alpha/K_inf,1)
-    for n in range(Num_samples):
-        Z[n,k] = np.random.binomial(1,Pi[k])
+# for k in range(k_inf):
+#     Pi[k] = np.random.beta(alpha/k_inf,1)
+#     for n in range(num_samples):
+#         Z[n,k] = np.random.binomial(1,Pi[k])
 
 # Draw A from multivariate normal
-# A = np.random.multivariate_normal(mu, sigma_A*np.identity(D), K_approx)
-A = np.random.normal(0, np.sqrt(sigma_A), (K_approx,D))
+# A = np.random.multivariate_normal(mu, sigma_A*np.identity(D), k_approx)
+#A = np.random.normal(0, np.sqrt(sigma_A), (k_approx,D))
 
 # draw noise
-# epsilon = np.random.multivariate_normal(np.zeros(D), sigma_eps*np.identity(D), Num_samples)
-epsilon = np.random.normal(0, np.sqrt(sigma_eps), (Num_samples, D))
+# epsilon = np.random.multivariate_normal(np.zeros(D), sigma_eps*np.identity(D), num_samples)
+#epsilon = np.random.normal(0, np.sqrt(sigma_eps), (num_samples, D))
 
 # the observed data
-X = np.dot(Z,A) + epsilon
+#X = np.dot(Z,A) + epsilon
 
 
-Data_shape = {'D':D, 'N': Num_samples , 'K':K_approx}
+Pi, Z, mu, A, X = generate_data(num_samples, D, k_inf, sigma_A, sigma_eps)
+
+k_approx = k_inf # variational truncation
+tau, nu, phi_mu, phi_var = initialize_parameters(num_samples, D, k_approx)
+
+data_shape = {'D':D, 'N': num_samples , 'K':k_approx}
 sigmas = {'eps': sigma_eps, 'A': sigma_A}
 
 
-
 class TestCaviUpdates(unittest.TestCase):
-    def test_silly(self):
-        self.assertEqual(2,2)
-        self.assertFalse(2==3)
-
-        for i in range(5):
-            self.assertEqual(i,i)
-
     def test_nu_updates(self):
         # initialization for cavi updates
-        tau = np.random.uniform(10,100,[K_approx,2])
-        nu = np.random.uniform(0,1,[Num_samples,K_approx])
+        tau = np.random.uniform(10,100,[k_approx,2])
+        nu = np.random.uniform(0,1,[num_samples,k_approx])
 
-        phi_mu = np.random.normal(0,1,[D,K_approx])
-        phi_var = np.ones(K_approx)
+        phi_mu = np.random.normal(0,1,[D,k_approx])
+        phi_var = np.ones(k_approx)
 
         # autodiff
         d_exp_log_LH = grad(exp_log_likelihood, 0)
@@ -105,26 +104,26 @@ class TestCaviUpdates(unittest.TestCase):
         E_log_pi2 = sp.special.digamma(tau[:,1]) - sp.special.digamma(tau[:,0] + tau[:,1])
 
 
-        for n in range(Num_samples):
-            for k in range(K_approx):
+        for n in range(num_samples):
+            for k in range(k_approx):
 
                 nu_moment = deepcopy(nu)
                 script_V_AG = d_exp_log_LH(nu_moment, phi_moment1, phi_moment2, \
-                               E_log_pi1, E_log_pi2, Data_shape, sigmas, X, alpha)
+                               E_log_pi1, E_log_pi2, data_shape, sigmas, X, alpha)
                 nu_AG = 1/(1 + np.exp(-script_V_AG))
 
                 nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k)
 
                 # print(np.abs(nu[n,k] - nu_AG[n,k]))
                 self.assertAlmostEqual(nu[n,k] , nu_AG[n,k])
-                
+
     def test_tau_updates(self):
         # initialization for cavi updates
-        tau = np.random.uniform(10,100,[K_approx,2])
-        nu = np.random.uniform(0,1,[Num_samples,K_approx])
+        tau = np.random.uniform(10,100,[k_approx,2])
+        nu = np.random.uniform(0,1,[num_samples,k_approx])
 
-        phi_mu = np.random.normal(0,1,[D,K_approx])
-        phi_var = np.ones(K_approx)
+        phi_mu = np.random.normal(0,1,[D,k_approx])
+        phi_var = np.ones(k_approx)
 
         # calling autodiff
         d_tau1 = grad(exp_log_likelihood, 3)
@@ -139,9 +138,9 @@ class TestCaviUpdates(unittest.TestCase):
 
         # computing updates
         tau1_AG = d_tau1(nu_moment, phi_moment1, phi_moment2, \
-                               E_log_pi1, E_log_pi2, Data_shape, sigmas, X, alpha) + 1
+                               E_log_pi1, E_log_pi2, data_shape, sigmas, X, alpha) + 1
         tau2_AG = d_tau2(nu_moment, phi_moment1, phi_moment2, \
-                               E_log_pi1, E_log_pi2, Data_shape, sigmas, X, alpha) + 1
+                               E_log_pi1, E_log_pi2, data_shape, sigmas, X, alpha) + 1
         tau_AG = np.array([tau1_AG, tau2_AG])
 
         tau_updates(tau, nu, alpha)
@@ -156,11 +155,11 @@ class TestCaviUpdates(unittest.TestCase):
         self.assertTrue(np.allclose(tau, tau_AG.T))
     def test_phi_updates(self):
         # initialization for cavi updates
-        tau = np.random.uniform(10,100,[K_approx,2])
-        nu = np.random.uniform(0,1,[Num_samples,K_approx])
+        tau = np.random.uniform(10,100,[k_approx,2])
+        nu = np.random.uniform(0,1,[num_samples,k_approx])
 
-        phi_mu = np.random.normal(0,1,[D,K_approx])
-        phi_var = np.ones(K_approx)
+        phi_mu = np.random.normal(0,1,[D,k_approx])
+        phi_var = np.ones(k_approx)
 
         # calling autodiff
         d_phi1  = grad(exp_log_likelihood, 1)
@@ -173,16 +172,16 @@ class TestCaviUpdates(unittest.TestCase):
 
 
 
-        for k in range(K_approx):
+        for k in range(k_approx):
             nu_moment = deepcopy(nu)
             phi_moment1 = deepcopy(phi_mu)
             phi_moment2 = np.diag(np.dot(phi_mu.T, phi_mu) + D * phi_var)
 
             # compute autograd updates
             phi1_AG = d_phi1(nu_moment, phi_moment1, phi_moment2, \
-                               E_log_pi1, E_log_pi2, Data_shape, sigmas, X, alpha)
+                               E_log_pi1, E_log_pi2, data_shape, sigmas, X, alpha)
             phi2_AG = d_phi2(nu_moment, phi_moment1, phi_moment2, \
-                               E_log_pi1, E_log_pi2, Data_shape, sigmas, X, alpha)
+                               E_log_pi1, E_log_pi2, data_shape, sigmas, X, alpha)
 
             # convert to standard parametrization
             phi_var_AG = -1/(2.*phi2_AG)
