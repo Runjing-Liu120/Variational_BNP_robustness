@@ -1,3 +1,7 @@
+#!/usr/bin/python3
+
+# Alarmingly, this fails with python2!
+
 # First unit test-- check CAVI updates
 
 import unittest
@@ -49,36 +53,15 @@ K_inf = 3 # take to be large for a good approximation to the IBP
 K_approx = deepcopy(K_inf)
 
 alpha = 2 # IBP parameter
-Pi = np.zeros(K_inf)
-Z = np.zeros([Num_samples,K_inf])
 
 # Parameters to draw A from MVN
-mu = np.zeros(D)
 sigma_A = 100
-
 sigma_eps = 1 # variance of noise
 
-# Draw Z from truncated stick breaking process
-for k in range(K_inf):
-    Pi[k] = np.random.beta(alpha/K_inf,1)
-    for n in range(Num_samples):
-        Z[n,k] = np.random.binomial(1,Pi[k])
-
-# Draw A from multivariate normal
-# A = np.random.multivariate_normal(mu, sigma_A*np.identity(D), K_approx)
-A = np.random.normal(0, np.sqrt(sigma_A), (K_approx,D))
-
-# draw noise
-# epsilon = np.random.multivariate_normal(np.zeros(D), sigma_eps*np.identity(D), Num_samples)
-epsilon = np.random.normal(0, np.sqrt(sigma_eps), (Num_samples, D))
-
-# the observed data
-X = np.dot(Z,A) + epsilon
-
+Pi, Z, mu, A, X = generate_data(Num_samples, D, K_inf, sigma_A, sigma_eps)
 
 Data_shape = {'D':D, 'N': Num_samples , 'K':K_approx}
 sigmas = {'eps': sigma_eps, 'A': sigma_A}
-
 
 
 class TestCaviUpdates(unittest.TestCase):
@@ -158,6 +141,7 @@ class TestCaviUpdates(unittest.TestCase):
         #print(tau2_AG)
 
         self.assertTrue(np.allclose(tau, tau_AG.T))
+
     def test_phi_updates(self):
         # initialization for cavi updates
         tau = np.random.uniform(10,100,[K_approx,2])
@@ -174,8 +158,6 @@ class TestCaviUpdates(unittest.TestCase):
 
         E_log_pi1 = sp.special.digamma(tau[:,0]) - sp.special.digamma(tau[:,0] + tau[:,1])
         E_log_pi2 = sp.special.digamma(tau[:,1]) - sp.special.digamma(tau[:,0] + tau[:,1])
-
-
 
         for k in range(K_approx):
             nu_moment = deepcopy(nu)
