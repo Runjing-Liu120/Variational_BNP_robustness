@@ -5,6 +5,8 @@
 import autograd.numpy as np
 import autograd.scipy as sp
 
+from scipy.special import expit
+
 import matplotlib.pyplot as plt
 from copy import deepcopy
 import math
@@ -47,8 +49,8 @@ def nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k, digamma_tau):
 
     script_V = nu_term1 - nu_term2 + nu_term3
 
-    nu[n,k] = 1./(1.+np.exp(-script_V))
-
+    #nu[n,k] = 1./(1.+np.exp(-script_V))
+    nu[n,k] = expit(script_V)
 
 
 def tau_updates(tau, nu, alpha):
