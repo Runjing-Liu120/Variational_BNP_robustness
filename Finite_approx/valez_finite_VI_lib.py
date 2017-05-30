@@ -181,12 +181,14 @@ def generate_data(Num_samples, D, K_inf, sigma_A, sigma_eps):
     Z = np.random.binomial(1, Pi, [ Num_samples, K_inf ])
 
     # Draw A from multivariate normal
-    A = np.random.multivariate_normal(mu, sigma_A * np.identity(D), K_inf)
-
+    # A = np.random.multivariate_normal(mu, sigma_A * np.identity(D), K_inf)
+    A = np.random.normal(0, np.sqrt(sigma_A), (K_inf, D))
+    
     # draw noise
-    epsilon = np.random.multivariate_normal(
-        np.zeros(D), sigma_eps*np.identity(D), Num_samples)
-
+    #epsilon = np.random.multivariate_normal(
+    #    np.zeros(D), sigma_eps*np.identity(D), Num_samples)
+    epsilon = np.random.normal(0, np.sqrt(sigma_eps), (Num_samples, D))
+    
     # the observed data
     X = np.dot(Z,A) + epsilon
 
