@@ -21,7 +21,7 @@ sigma_eps  = 2
 alpha = 10
 
 Pi, Z, mu, A, X = \
-    finite_lib.generate_data(Num_samples, D, K_inf, sigma_A, sigma_eps)
+    finite_lib.generate_data(Num_samples, D, K_inf, sigma_A, sigma_eps, alpha)
 
 # initialize variational parameters
 K_approx = deepcopy(K_inf)

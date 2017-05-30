@@ -170,8 +170,10 @@ def initialize_parameters(Num_samples, D, K_approx):
     return tau, nu, phi_mu, phi_var
 
 
-def generate_data(Num_samples, D, K_inf, sigma_A, sigma_eps):
-    Pi = np.ones(K_inf) * .8
+def generate_data(Num_samples, D, K_inf, sigma_A, sigma_eps, alpha):
+    Pi = np.ones(K_inf) * .8 
+    # Pi = np.random.beta(alpha/K_inf, 1)
+    
     Z = np.zeros([Num_samples, K_inf])
 
     # Parameters to draw A from MVN
