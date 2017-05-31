@@ -50,7 +50,10 @@ def nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k, digamma_tau):
     script_V = nu_term1 - nu_term2 + nu_term3
 
     #nu[n,k] = 1./(1.+np.exp(-script_V))
-    nu[n,k] = expit(script_V)
+    nu[n, k] = expit(script_V)
+    if not np.isfinite(nu[n, k]):
+        raise ValueError('Infinite nu[%d, %d]' % (n, k))
+
 
 
 def tau_updates(tau, nu, alpha):
@@ -75,6 +78,8 @@ def cavi_updates(tau, nu, phi_mu, phi_var, X, alpha, sigmas):
     for n in range(N):
         for k in range(K):
             nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k, digamma_tau)
+            if not np.isfinite(nu[n, k]):
+                raise ValueError('no no no')
 
     for k in range(K):
         phi_updates(nu, phi_mu, phi_var, X, sigmas, k)
@@ -108,8 +113,8 @@ def compute_elbo(tau, nu, phi_mu, phi_var, X, sigmas, alpha):
         -1/(2. * sigma_eps) * np.trace(np.dot(X.T, X)) \
         +1/(sigma_eps) * np.trace(np.dot(np.dot(nu, phi_mu.T), X.T))\
         -1/(2. * sigma_eps) * np.sum(np.dot(nu, D*phi_var + np.diag(np.dot(phi_mu.T, phi_mu)))) \
-        -1/(2.*sigma_eps) * np.trace(np.dot(np.dot(nu, np.dot(phi_mu.T, phi_mu) - np.identity(K) \
-                                                    * np.diag(np.dot(phi_mu.T, phi_mu))), nu.T))\
+        -1/(2. * sigma_eps) * np.trace(np.dot(np.dot(nu, np.dot(phi_mu.T, phi_mu) - np.identity(K) \
+                                                         * np.diag(np.dot(phi_mu.T, phi_mu))), nu.T))\
 
     # The log beta function is not in autograd's scipy.
     log_beta = sp.special.gammaln(tau[:,0]) + sp.special.gammaln(tau[:,1]) \
@@ -173,9 +178,9 @@ def initialize_parameters(Num_samples, D, K_approx):
 
 
 def generate_data(Num_samples, D, K_inf, sigma_A, sigma_eps, alpha):
-    Pi = np.ones(K_inf) * .8 
+    Pi = np.ones(K_inf) * .8
     # Pi = np.random.beta(alpha/K_inf, 1)
-    
+
     Z = np.zeros([Num_samples, K_inf])
 
     # Parameters to draw A from MVN
@@ -187,12 +192,12 @@ def generate_data(Num_samples, D, K_inf, sigma_A, sigma_eps, alpha):
     # Draw A from multivariate normal
     # A = np.random.multivariate_normal(mu, sigma_A * np.identity(D), K_inf)
     A = np.random.normal(0, np.sqrt(sigma_A), (K_inf, D))
-    
+
     # draw noise
     #epsilon = np.random.multivariate_normal(
     #    np.zeros(D), sigma_eps*np.identity(D), Num_samples)
     epsilon = np.random.normal(0, np.sqrt(sigma_eps), (Num_samples, D))
-    
+
     # the observed data
     X = np.dot(Z,A) + epsilon
 
