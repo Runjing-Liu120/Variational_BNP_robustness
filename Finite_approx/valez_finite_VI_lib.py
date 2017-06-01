@@ -142,7 +142,7 @@ def nu_entropy(nu):
 
 
 def phi_entropy(phi_var, D):
-    return 0.5 * D * np.sum(np.log(2. * np.pi * phi_var))
+    return 0.5 * D * np.sum(np.log(2. * np.pi * phi_var) + 1)
 
 
 def pi_entropy(tau):

@@ -51,18 +51,16 @@ n_test_samples = 10**5
 
 z_sample = np.random.binomial(1, nu, size=(n_test_samples, nu.shape[0], nu.shape[1]))
 
-a_sample = np.random.normal(phi_mu, np.array([ phi_var for d in range(D)]),
+# A version of phi_var with the same shape as phi_mu
+phi_var_expanded = np.array([ phi_var for d in range(D)])
+a_sample = np.random.normal(phi_mu, phi_var_expanded,
                             (n_test_samples, phi_mu.shape[0], phi_mu.shape[1]))
-# a_sample = np.zeros((K_approx, D, n_test_samples))
-# for k in range(K_approx):
-#     for d in range(D):
-#         a_sample[k,d,:] = np.random.normal(phi_mu[d, k], phi_var[k], n_test_samples)
 
 # The numpy beta draws seem to actually hit zero and one, in contrast to scipy.
 pi_sample = osp.stats.beta.rvs(tau[:, 0], tau[:, 1], size=(n_test_samples, tau.shape[0]))
 
 tol_scale = 1. / np.sqrt(n_test_samples)
-print('tol_scale: %f' % tol_scale)
+print('1 / sqrt(num test draws) = %0.6f' % tol_scale)
 
 class TestElboComputation(unittest.TestCase):
     def assert_allclose(self, x, y, tol=1e-12):
@@ -75,7 +73,6 @@ class TestElboComputation(unittest.TestCase):
         # Pi (tau)
         self.assert_allclose(np.mean(pi_sample, 0),
                              tau[:,0] / (tau[:,0] + tau[:,1]), 10 * tol_scale)
-
         log_pi_sample_mean = np.mean(np.log(pi_sample), 0)
         log_1mpi_sample_mean = np.mean(np.log(1 - pi_sample), 0)
         self.assert_allclose(e_log_pi1, log_pi_sample_mean,  10 * tol_scale)
@@ -92,10 +89,25 @@ class TestElboComputation(unittest.TestCase):
         self.assert_allclose(a_sample_mean, phi_moment1, 30 * tol_scale)
         self.assert_allclose(a2_sample_mean, phi_moment2, 30 * tol_scale)
 
+    def test_entropy(self):
+        # Autograd has not implemented certain entropy functions, so test our own.
+        self.assert_allclose(
+            np.sum(osp.stats.beta.entropy(tau[:, 0], tau[:, 1])),
+            finite_lib.pi_entropy(tau), tol=1e-12)
+
+        self.assert_allclose(
+            np.sum(osp.stats.norm.entropy(phi_mu, np.sqrt(phi_var_expanded))),
+            finite_lib.phi_entropy(phi_var, D), tol=1e-12)
+
+        self.assert_allclose(
+            np.sum(osp.stats.bernoulli.entropy(nu)),
+            finite_lib.nu_entropy(nu), tol=1e-12)
+
     def test_old_elbo(self):
-        pass
-        # print(finite_lib.compute_elbo_old(tau, nu, phi_mu, phi_var, X, sigmas, alpha)[0])
-        # print(finite_lib.compute_elbo(tau, nu, phi_mu, phi_var, X, sigmas, alpha))
+        print('New vs old:')
+        print(finite_lib.compute_elbo_old(tau, nu, phi_mu, phi_var, X, sigmas, alpha)[0])
+        print(finite_lib.compute_elbo(tau, nu, phi_mu, phi_var, X, sigmas, alpha))
+        print('--------')
 
     # def test_term1(self):
     #     term1_sample = (alpha/K_approx - 1) * np.sum(np.mean(np.log(pi_sample), 1))
