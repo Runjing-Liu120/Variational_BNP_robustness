@@ -100,7 +100,8 @@ def exp_log_likelihood_old(nu_moment, phi_moment1, phi_moment2, \
     Normal_X_sum = 0
     ## compute the data likelihood term
     for n in range(N):
-        dum1 = 2.*np.sum(np.sum(nu_moment[n,i] * nu_moment[n,j] * np.dot(phi_moment1[:,i],phi_moment1[:,j]) \
+        dum1 = 2.*np.sum(np.sum(nu_moment[n,i] * nu_moment[n,j] * \
+                                np.dot(phi_moment1[:,i],phi_moment1[:,j]) \
                                 for i in range(j)) for j in range(K))
         dum2 = np.dot(nu_moment[n,:] , phi_moment2 )
 
@@ -113,6 +114,7 @@ def exp_log_likelihood_old(nu_moment, phi_moment1, phi_moment2, \
 
     y = beta_lh + bern_lh + Normal_A + Normal_X
     return(y)
+
 
 def compute_elbo_old(tau, nu, phi_mu, phi_var, X, sigmas, alpha):
 
@@ -131,13 +133,24 @@ def compute_elbo_old(tau, nu, phi_mu, phi_var, X, sigmas, alpha):
     elbo_term2 = np.sum(np.dot(nu, digamma_tau[:,0]) + np.dot(1-nu, digamma_tau[:,1])) \
                 - N * np.sum(digamma_sum_tau)
 
+    # elbo_term3 = \
+    #     -K*D/2.*np.log(2.*np.pi*sigma_a) - 1./(2.*sigma_a) *\
+    #     (np.sum(phi_var)*D + np.trace(np.dot(phi_mu.T , phi_mu)))
+
     elbo_term3 = \
-        -K*D/2.*np.log(2.*np.pi*sigma_a) - 1./(2.*sigma_a) *\
-        (np.sum(phi_var)*D + np.trace(np.dot(phi_mu.T , phi_mu)))
+        - 1./(2.*sigma_a) * (np.sum(phi_var)*D + np.trace(np.dot(phi_mu.T , phi_mu)))
+
+    # elbo_term4 = \
+    #     -N * D/2. * np.log(2. * np.pi * sigma_eps)\
+    #     -1/(2. * sigma_eps) * np.trace(np.dot(X.T, X)) \
+    #     +1/(sigma_eps) * np.trace(np.dot(np.dot(nu, phi_mu.T), X.T))\
+    #     -1/(2. * sigma_eps) * np.sum(np.dot(nu, D*phi_var + \
+    #         np.diag(np.dot(phi_mu.T, phi_mu)))) \
+    #     -1/(2.*sigma_eps) * np.trace(np.dot(np.dot( \
+    #         nu, np.dot(phi_mu.T, phi_mu) - np.identity(K) \
+    #         * np.diag(np.dot(phi_mu.T, phi_mu))), nu.T))
 
     elbo_term4 = \
-        -N * D/2. * np.log(2. * np.pi * sigma_eps)\
-        -1/(2. * sigma_eps) * np.trace(np.dot(X.T, X)) \
         +1/(sigma_eps) * np.trace(np.dot(np.dot(nu, phi_mu.T), X.T))\
         -1/(2. * sigma_eps) * np.sum(np.dot(nu, D*phi_var + \
             np.diag(np.dot(phi_mu.T, phi_mu)))) \
@@ -241,9 +254,10 @@ def exp_log_likelihood(nu_moment, phi_moment1, phi_moment2, \
     K = nu_moment.shape[1]
 
     # Compute the beta, bernoulli, and A terms.
-    beta_lh = (alpha / K - 1.) * np.sum(e_log_pi1)
+    beta_lh = (alpha / float(K) - 1.) * np.sum(e_log_pi1)
     bern_lh = np.sum(nu_moment * (e_log_pi1 - e_log_pi2)) + N * np.sum(e_log_pi2)
     norm_a_term = -0.5 * np.sum(phi_moment2) / sigma_a
+    #norm_a_term = -0.5 * np.sum(phi_moment1 ** 2) / sigma_a
 
     # Compute the data likelihood term
     phi_moment1_outer = np.matmul(phi_moment1.T, phi_moment1)
@@ -259,10 +273,10 @@ def exp_log_likelihood(nu_moment, phi_moment1, phi_moment2, \
 
 def initialize_parameters(Num_samples, D, K_approx):
     # tau1, tau2 -- beta parameters for v
-    tau = np.random.uniform(0, 1, [K_approx, 2])
+    tau = np.random.uniform(0.5, 2.0, [K_approx, 2])
 
     # Bernoulli parameter for z_nk
-    nu =  np.random.uniform(0, 1, [Num_samples, K_approx])
+    nu =  np.random.uniform(0.01, 0.99, [Num_samples, K_approx])
 
     # kth mean (D dim vector) in kth column
     phi_mu = np.random.normal(0, 1, [D, K_approx])
