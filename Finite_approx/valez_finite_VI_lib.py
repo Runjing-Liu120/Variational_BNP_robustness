@@ -139,27 +139,54 @@ def exp_log_likelihood(nu_moment, phi_moment1, phi_moment2, \
     N = Data_shape['N']
     K = Data_shape['K']
 
-    beta_lh = (alpha/K - 1.)*np.sum(E_log_pi1)
-    bern_lh = np.sum(np.dot(nu_moment[n,:], E_log_pi1) \
-                            + np.dot(1.-nu_moment[n,:], E_log_pi2) for n in range(N))
-    Normal_A = -1/(2.*sigma_A) * np.sum(phi_moment2)
+    # Compute the beta, bernoulli, and A terms.
+    beta_lh = (alpha / K - 1.) * np.sum(E_log_pi1)
+    bern_lh = np.sum(nu_moment * (E_log_pi1 - E_log_pi2)) + N * np.sum(E_log_pi2)
+    norm_a_term = -0.5 * np.sum(phi_moment2) / sigma_A
 
-    Normal_X_sum = 0
     ## compute the data likelihood term
-    for n in range(N):
-        dum1 = 2.*np.sum(np.sum(nu_moment[n,i] * nu_moment[n,j] * np.dot(phi_moment1[:,i],phi_moment1[:,j]) \
-                                for i in range(j)) for j in range(K))
-        dum2 = np.dot(nu_moment[n,:] , phi_moment2 )
+    phi_moment1_outer = np.matmul(phi_moment1.T, phi_moment1)
+    phi_moment1_outer = phi_moment1_outer - np.diag(np.diag(phi_moment1_outer))
+    norm_x_nu_quadratic = \
+        np.einsum('ni,nj,ij', nu_moment, nu_moment, phi_moment1_outer)
+    norm_x_nu_linear = \
+        np.sum(nu_moment * (-2. * np.matmul(X, phi_moment1) + phi_moment2))
+    norm_x_term = -0.5 * (norm_x_nu_linear + norm_x_nu_quadratic) / sigma_eps
 
-        dum3 = -2. * np.dot(X[n,:], np.dot(phi_moment1, nu_moment[n,:]))
+    return beta_lh + bern_lh + norm_a_term + norm_x_term
 
-        # dum4 = np.dot(X[n,:], X[n,:])
-        Normal_X_sum += dum1 + dum2 + dum3
 
-    Normal_X = -1/(2*sigma_eps)*Normal_X_sum
-
-    y = beta_lh + bern_lh + Normal_A + Normal_X
-    return(y)
+# def exp_log_likelihood_old(nu_moment, phi_moment1, phi_moment2, \
+#                            E_log_pi1, E_log_pi2, Data_shape, sigmas, X, alpha):
+#
+#     sigma_eps = sigmas['eps']
+#     sigma_A = sigmas['A']
+#     D = Data_shape['D']
+#     N = Data_shape['N']
+#     K = Data_shape['K']
+#
+#     beta_lh = (alpha/K - 1.)*np.sum(E_log_pi1)
+#     bern_lh = np.sum(np.dot(nu_moment[n,:], E_log_pi1) \
+#                             + np.dot(1.-nu_moment[n,:], E_log_pi2) for n in range(N))
+#     Normal_A = -1/(2.*sigma_A) * np.sum(phi_moment2)
+#
+#     Normal_X_sum = 0
+#     ## compute the data likelihood term
+#     for n in range(N):
+#         dum1 = 2.*np.sum(np.sum(nu_moment[n,i] * nu_moment[n,j] *
+#                                 np.dot(phi_moment1[:,i], phi_moment1[:,j]) \
+#                                 for i in range(j)) for j in range(K))
+#         dum2 = np.dot(nu_moment[n,:] , phi_moment2 )
+#
+#         dum3 = -2. * np.dot(X[n,:], np.dot(phi_moment1, nu_moment[n,:]))
+#
+#         # dum4 = np.dot(X[n,:], X[n,:])
+#         Normal_X_sum += dum1 + dum2 + dum3
+#
+#     Normal_X = -1/(2*sigma_eps)*Normal_X_sum
+#
+#     y = beta_lh + bern_lh + Normal_A + Normal_X
+#     return(y)
 
 
 def initialize_parameters(Num_samples, D, K_approx):
@@ -173,9 +200,9 @@ def initialize_parameters(Num_samples, D, K_approx):
 
 
 def generate_data(Num_samples, D, K_inf, sigma_A, sigma_eps, alpha):
-    Pi = np.ones(K_inf) * .8 
+    Pi = np.ones(K_inf) * .8
     # Pi = np.random.beta(alpha/K_inf, 1)
-    
+
     Z = np.zeros([Num_samples, K_inf])
 
     # Parameters to draw A from MVN
@@ -187,12 +214,12 @@ def generate_data(Num_samples, D, K_inf, sigma_A, sigma_eps, alpha):
     # Draw A from multivariate normal
     # A = np.random.multivariate_normal(mu, sigma_A * np.identity(D), K_inf)
     A = np.random.normal(0, np.sqrt(sigma_A), (K_inf, D))
-    
+
     # draw noise
     #epsilon = np.random.multivariate_normal(
     #    np.zeros(D), sigma_eps*np.identity(D), Num_samples)
     epsilon = np.random.normal(0, np.sqrt(sigma_eps), (Num_samples, D))
-    
+
     # the observed data
     X = np.dot(Z,A) + epsilon
 
