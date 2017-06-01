@@ -103,8 +103,25 @@ class TestElboComputation(unittest.TestCase):
             np.sum(osp.stats.bernoulli.entropy(nu)),
             finite_lib.nu_entropy(nu), tol=1e-12)
 
+    def test_e_log_lik(self):
+        e_log_pi1, e_log_pi2, phi_moment1, phi_moment2, nu_moment = \
+            finite_lib.get_moments(tau, nu, phi_mu, phi_var)
+
+        ell_old = finite_lib.exp_log_likelihood_old(
+            nu_moment, phi_moment1, phi_moment2, e_log_pi1, e_log_pi2,
+            sigmas, X, alpha)
+
+        ell = finite_lib.exp_log_likelihood(
+            nu_moment, phi_moment1, phi_moment2, e_log_pi1, e_log_pi2,
+            sigmas, X, alpha)
+
+        print('New vs old log likelihood:')
+        print(ell_old)
+        print(ell)
+
+
     def test_old_elbo(self):
-        print('New vs old:')
+        print('New vs old elbo:')
         print(finite_lib.compute_elbo_old(tau, nu, phi_mu, phi_var, X, sigmas, alpha)[0])
         print(finite_lib.compute_elbo(tau, nu, phi_mu, phi_var, X, sigmas, alpha))
         print('--------')

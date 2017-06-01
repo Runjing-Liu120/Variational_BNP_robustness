@@ -83,6 +83,37 @@ def cavi_updates(tau, nu, phi_mu, phi_var, X, alpha, sigmas):
     tau_updates(tau, nu, alpha)
 
 
+def exp_log_likelihood_old(nu_moment, phi_moment1, phi_moment2, \
+                           E_log_pi1, E_log_pi2, sigmas, X, alpha):
+
+    sigma_eps = sigmas['eps']
+    sigma_A = sigmas['A']
+    D = np.shape(X)[1]
+    N = np.shape(X)[0]
+    K = np.shape(phi_moment1)[1]
+
+    beta_lh = (alpha/K - 1.)*np.sum(E_log_pi1)
+    bern_lh = np.sum(np.dot(nu_moment[n,:], E_log_pi1) \
+                            + np.dot(1.-nu_moment[n,:], E_log_pi2) for n in range(N))
+    Normal_A = -1/(2.*sigma_A) * np.sum(phi_moment2)
+
+    Normal_X_sum = 0
+    ## compute the data likelihood term
+    for n in range(N):
+        dum1 = 2.*np.sum(np.sum(nu_moment[n,i] * nu_moment[n,j] * np.dot(phi_moment1[:,i],phi_moment1[:,j]) \
+                                for i in range(j)) for j in range(K))
+        dum2 = np.dot(nu_moment[n,:] , phi_moment2 )
+
+        dum3 = -2. * np.dot(X[n,:], np.dot(phi_moment1, nu_moment[n,:]))
+
+        # dum4 = np.dot(X[n,:], X[n,:])
+        Normal_X_sum += dum1 + dum2 + dum3
+
+    Normal_X = -1/(2*sigma_eps)*Normal_X_sum
+
+    y = beta_lh + bern_lh + Normal_A + Normal_X
+    return(y)
+
 def compute_elbo_old(tau, nu, phi_mu, phi_var, X, sigmas, alpha):
 
     sigma_eps = sigmas['eps']
