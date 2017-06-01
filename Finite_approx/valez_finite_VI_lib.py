@@ -138,7 +138,7 @@ def compute_elbo_old(tau, nu, phi_mu, phi_var, X, sigmas, alpha):
 def nu_entropy(nu):
     log_1mnu = np.log(1 - nu)
     log_nu = np.log(nu)
-    return -1 * np.sum(nu * (log_nu - log_1mnu) + log_1mnu)
+    return -1 * np.sum(nu * log_nu + (1 - nu) * log_1mnu)
 
 
 def phi_entropy(phi_var, D):
@@ -164,9 +164,9 @@ def pi_entropy(tau):
 
 
 def get_moments(tau, nu, phi_mu, phi_var):
-    lgamma_tausum = sp.special.gammaln(np.sum(tau, 1))
-    e_log_pi1 = sp.special.gammaln(tau[:, 0]) - lgamma_tausum
-    e_log_pi2 = sp.special.gammaln(tau[:, 1]) - lgamma_tausum
+    digamma_tausum = sp.special.digamma(np.sum(tau, 1))
+    e_log_pi1 = sp.special.digamma(tau[:, 0]) - digamma_tausum
+    e_log_pi2 = sp.special.digamma(tau[:, 1]) - digamma_tausum
 
     nu_moment = nu
 
