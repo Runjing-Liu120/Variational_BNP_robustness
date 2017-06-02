@@ -228,38 +228,38 @@ def generate_parameter_draws(nu, phi_mu, phi_var_expanded, tau, n_test_samples):
 ####################################
 # Initialization and generation of data sets.
 
-def initialize_parameters(Num_samples, D, K_approx):
+def initialize_parameters(num_samples, D, k_approx):
     # tau1, tau2 -- beta parameters for v
-    tau = np.random.uniform(0.5, 2.0, [K_approx, 2])
+    tau = np.random.uniform(0.5, 2.0, [k_approx, 2])
 
     # Bernoulli parameter for z_nk
-    nu =  np.random.uniform(0.01, 0.99, [Num_samples, K_approx])
+    nu =  np.random.uniform(0.01, 0.99, [num_samples, k_approx])
 
     # kth mean (D dim vector) in kth column
-    phi_mu = np.random.normal(0, 1, [D, K_approx])
-    phi_var = np.ones(K_approx)
+    phi_mu = np.random.normal(0, 1, [D, k_approx])
+    phi_var = np.ones(k_approx)
 
     return tau, nu, phi_mu, phi_var
 
 
-def generate_data(Num_samples, D, K_inf, sigma_a, sigma_eps, alpha):
-    Pi = np.ones(K_inf) * .8
+def generate_data(num_samples, D, k_inf, sigma_a, sigma_eps, alpha):
+    pi = np.ones(k_inf) * .8
 
-    Z = np.zeros([Num_samples, K_inf])
+    Z = np.zeros([num_samples, k_inf])
 
     # Parameters to draw A from MVN
     mu = np.zeros(D)
 
     # Draw Z from truncated stick breaking process
-    Z = np.random.binomial(1, Pi, [ Num_samples, K_inf ])
+    Z = np.random.binomial(1, pi, [ num_samples, k_inf ])
 
     # Draw A from multivariate normal
-    A = np.random.normal(0, np.sqrt(sigma_a), (K_inf, D))
+    A = np.random.normal(0, np.sqrt(sigma_a), (k_inf, D))
 
     # draw noise
-    epsilon = np.random.normal(0, np.sqrt(sigma_eps), (Num_samples, D))
+    epsilon = np.random.normal(0, np.sqrt(sigma_eps), (num_samples, D))
 
     # the observed data
     X = np.matmul(Z, A) + epsilon
 
-    return Pi, Z, mu, A, X
+    return pi, Z, mu, A, X
