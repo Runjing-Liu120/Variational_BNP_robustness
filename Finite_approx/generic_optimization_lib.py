@@ -5,7 +5,7 @@ def pack_tau(tau):
     return np.log(tau).flatten()
 
 def unpack_tau(tau_packed, k_approx):
-    return np.exp(tau_packed).reshape((k_approx))
+    return np.exp(tau_packed).reshape((k_approx, 2))
 
 def pack_phi_mu(phi_mu):
     return phi_mu.flatten()
@@ -39,7 +39,7 @@ def unpack_params(params, k_approx, x_dim, num_samples):
 
     assert len(params) == tau_size + phi_mu_size + phi_var_size + nu_size
 
-    tau = unpack_tau(params[offset:(offset + tau_size)], k_approx, x_dim)
+    tau = unpack_tau(params[offset:(offset + tau_size)], k_approx)
     offset += tau_size
 
     phi_mu = unpack_phi_mu(params[offset:(offset + phi_mu_size)], k_approx, x_dim)

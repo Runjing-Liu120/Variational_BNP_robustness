@@ -38,6 +38,7 @@ class TestParameterPacking(unittest.TestCase):
         self.assert_allclose(phi_var0, phi_var)
         self.assert_allclose(nu0, nu)
 
+
     def test_hyperparameter_packing(self):
         alpha = 2.5
         sigma_A = 10
@@ -48,6 +49,7 @@ class TestParameterPacking(unittest.TestCase):
         self.assertAlmostEqual(alpha0, alpha)
         self.assertAlmostEqual(sigma_A0, sigma_A)
         self.assertAlmostEqual(sigma_eps0, sigma_eps)
+
 
     def test_parameter_packing(self):
         num_samples = 10
@@ -65,6 +67,7 @@ class TestParameterPacking(unittest.TestCase):
         self.assert_allclose(nu, nu0)
         self.assert_allclose(phi_mu, phi_mu0)
         self.assert_allclose(phi_var, phi_var0)
+
 
     def test_moment_packing(self):
         x_dim = 4

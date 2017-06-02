@@ -7,11 +7,8 @@ from copy import deepcopy
 
 from scipy import optimize
 
-from valez_finite_VI_lib import \
-    initialize_parameters, generate_data, compute_elbo, cavi_updates
-from generic_optimization_lib import \
-    unpack_params, pack_params, pack_hyperparameters, unpack_hyperparameters, \
-    flatten_params
+import valez_finite_VI_lib as vi
+import generic_optimization_lib as packing
 
 
 class OptimzationTrace(object):
@@ -58,40 +55,51 @@ class DataSet(object):
         self.trace = OptimzationTrace()
 
     def unpack_params(self, params):
-         return unpack_params(params, self.data_shape['K'],
-                              self.data_shape['D'], self.data_shape['N'])
+         return packing.unpack_params(
+            params, self.data_shape['K'], self.data_shape['D'], self.data_shape['N'])
 
     def cavi_updates(self, tau, nu, phi_mu, phi_var):
-        cavi_updates(tau, nu, phi_mu, phi_var, \
-                     self.x, self.alpha, self.sigmas)
+        vi.cavi_updates(tau, nu, phi_mu, phi_var, \
+                        self.x, self.alpha, self.sigmas)
 
     def wrapped_kl(self, params, tracing=True):
         tau, phi_mu, phi_var, nu = self.unpack_params(params)
-        elbo = compute_elbo(tau, nu, phi_mu, phi_var, \
-                            self.x, self.sigmas, self.alpha)
+        elbo = vi.compute_elbo(tau, nu, phi_mu, phi_var, \
+                               self.x, self.sigmas, self.alpha)
         if tracing:
             self.trace.update(params, -1 * elbo)
         return -1 * elbo
 
     def wrapped_kl_hyperparams(self, params, hyper_params):
         tau, phi_mu, phi_var, nu = self.unpack_params(params)
-        alpha, sigma_a, sigma_eps = unpack_hyperparameters(hyper_params)
+        alpha, sigma_a, sigma_eps = packing.unpack_hyperparameters(hyper_params)
         sigmas = {'eps': sigma_eps, 'A': sigma_a}
-        elbo = compute_elbo(tau, nu, phi_mu, phi_var, self.x, sigmas, alpha)
+        elbo = vi.compute_elbo(tau, nu, phi_mu, phi_var, self.x, sigmas, alpha)
         return -1 * elbo
 
     def get_prediction(self, params):
         tau, phi_mu, phi_var, nu = self.unpack_params(params)
         return np.matmul(nu, phi_mu.T)
 
+    def get_moments(self, params):
+        # Return moments of interest.
+        tau, phi_mu, phi_var, nu = self.unpack_params(params)
+        e_log_pi, e_log_pi2, e_mu, phi_moment2, nu_moment = \
+            get_moments(tau, nu, phi_mu, phi_var)
+        return e_log_pi, e_mu
+
+    def get_moments_vector(self, params):
+        e_log_pi, e_mu = self.get_moments(params)
+        return packing.pack_moments(e_log_pi, e_mu)
+
     def run_cavi(self, tau, nu, phi_mu, phi_var, max_iter=200, tol=1e-6):
-        params = flatten_params(tau, nu, phi_mu, phi_var)
+        params = packing.flatten_params(tau, nu, phi_mu, phi_var)
 
         self.trace.reset()
         diff = np.float('inf')
         while diff > tol and self.trace.stepnum < max_iter:
             self.cavi_updates(tau, nu, phi_mu, phi_var)
-            new_params = flatten_params(tau, nu, phi_mu, phi_var)
+            new_params = packing.flatten_params(tau, nu, phi_mu, phi_var)
             diff = np.max(np.abs(new_params - params))
             self.trace.update(params, diff)
             if not np.isfinite(diff):
