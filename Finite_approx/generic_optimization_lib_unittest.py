@@ -15,7 +15,7 @@ class TestParameterPacking(unittest.TestCase):
     def assert_allclose(self, x, y):
         self.assertTrue(np.allclose(x, y))
 
-    def test_packing(self):
+    def test_parameter_packing(self):
         num_samples = 10
         d = 2
         k_approx = 3
@@ -38,6 +38,17 @@ class TestParameterPacking(unittest.TestCase):
         self.assert_allclose(phi_mu0, phi_mu)
         self.assert_allclose(phi_var0, phi_var)
         self.assert_allclose(nu0, nu)
+
+    def test_hyperparameter_packing(self):
+        alpha = 2.5
+        sigma_A = 10
+        sigma_eps = 0.5
+        hyper_params = pack_hyperparameters(alpha, sigma_A, sigma_eps)
+        alpha0, sigma_A0, sigma_eps0 = unpack_hyperparameters(hyper_params)
+        self.assertAlmostEqual(alpha0, alpha)
+        self.assertAlmostEqual(sigma_A0, sigma_A)
+        self.assertAlmostEqual(sigma_eps0, sigma_eps)
+
 
 
 if __name__ == '__main__':

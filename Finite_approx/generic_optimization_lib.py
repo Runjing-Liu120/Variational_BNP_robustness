@@ -1,7 +1,6 @@
 import autograd.numpy as np
 import autograd.scipy as sp
 
-
 def pack_tau(tau):
     return np.log(tau).flatten()
 
@@ -52,3 +51,20 @@ def unpack_params(params, K_approx, D, Num_samples):
     nu = unpack_nu(params[offset:(offset + nu_size)], Num_samples, K_approx)
 
     return tau, phi_mu, phi_var, nu
+
+
+def pack_hyperparameters(alpha, sigma_A, sigma_eps):
+    return np.array([ alpha, sigma_A, sigma_eps ])
+
+
+def unpack_hyperparameters(hyper_params):
+    alpha = hyper_params[0]
+    sigma_A = hyper_params[1]
+    sigma_eps = hyper_params[2]
+    return alpha, sigma_A, sigma_eps
+
+
+# Stack params in a vector without constraining them.
+def flatten_params(tau, nu, phi_mu, phi_var):
+    return np.hstack([ tau.flatten(), nu.flatten(),
+                       phi_mu.flatten(), phi_var.flatten() ])
