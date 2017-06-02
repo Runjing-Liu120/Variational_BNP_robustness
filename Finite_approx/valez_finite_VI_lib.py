@@ -6,6 +6,7 @@ import autograd.numpy as np
 import autograd.scipy as sp
 
 from scipy.special import expit
+from scipy.special import betaln
 
 import matplotlib.pyplot as plt
 from copy import deepcopy
@@ -75,7 +76,7 @@ def cavi_updates(tau, nu, phi_mu, phi_var, X, alpha, sigmas):
     for n in range(N):
         for k in range(K):
             nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k, digamma_tau)
-
+    
     for k in range(K):
         phi_updates(nu, phi_mu, phi_var, X, sigmas, k)
 
@@ -114,7 +115,8 @@ def compute_elbo(tau, nu, phi_mu, phi_var, X, sigmas, alpha):
     # The log beta function is not in autograd's scipy.
     log_beta = sp.special.gammaln(tau[:,0]) + sp.special.gammaln(tau[:,1]) \
         - sp.special.gammaln(tau[:,0] + tau[:,1])
-
+    log_beta = betaln(tau[:,0], tau[:,1])
+    
     elbo_term5 = np.sum(log_beta - \
         (tau[:,0] - 1) * digamma_tau[:,0] - \
         (tau[:,1] - 1) * digamma_tau[:,1] + \
@@ -173,8 +175,8 @@ def initialize_parameters(Num_samples, D, K_approx):
 
 
 def generate_data(Num_samples, D, K_inf, sigma_A, sigma_eps, alpha):
-    Pi = np.ones(K_inf) * .8 
-    # Pi = np.random.beta(alpha/K_inf, 1)
+    # Pi = np.ones(K_inf) * .8 
+    Pi = np.random.beta(alpha/K_inf, 1, size = K_inf)
     
     Z = np.zeros([Num_samples, K_inf])
 
@@ -197,3 +199,6 @@ def generate_data(Num_samples, D, K_inf, sigma_A, sigma_eps, alpha):
     X = np.dot(Z,A) + epsilon
 
     return Pi, Z, mu, A, X
+
+def test_fun(a): 
+    a = 3
