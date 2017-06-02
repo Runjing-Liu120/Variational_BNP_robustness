@@ -5,7 +5,7 @@
 # First unit test-- check CAVI updates
 
 import unittest
-from valez_finite_VI_lib import *
+import finite_approx.valez_finite_VI_lib as vi
 from autograd import grad
 import autograd.numpy as np
 import autograd.scipy as sp
@@ -28,7 +28,7 @@ alpha = 2 # IBP parameter
 sigma_A = 100
 sigma_eps = 1 # variance of noise
 
-Pi, Z, mu, A, X = generate_data(Num_samples, D, K_inf, sigma_A, sigma_eps, alpha)
+Pi, Z, mu, A, X = vi.generate_data(Num_samples, D, K_inf, sigma_A, sigma_eps, alpha)
 
 Data_shape = {'D':D, 'N': Num_samples , 'K':K_approx}
 sigmas = {'eps': sigma_eps, 'A': sigma_A}
@@ -52,7 +52,7 @@ class TestCaviUpdates(unittest.TestCase):
         phi_var = np.ones(K_approx)
 
         # autodiff
-        d_exp_log_LH = grad(exp_log_likelihood, 0)
+        d_exp_log_LH = grad(vi.exp_log_likelihood, 0)
 
         # compute required moments
         phi_moment1 = deepcopy(phi_mu)
@@ -69,7 +69,7 @@ class TestCaviUpdates(unittest.TestCase):
                                e_log_pi1, e_log_pi2, sigmas, X, alpha)
                 nu_AG = 1/(1 + np.exp(-script_V_AG))
 
-                nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k, digamma_tau)
+                vi.nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k, digamma_tau)
 
 
                 # print(np.abs(nu[n,k] - nu_AG[n,k]))
@@ -84,8 +84,8 @@ class TestCaviUpdates(unittest.TestCase):
         phi_var = np.ones(K_approx)
 
         # calling autodiff
-        d_tau1 = grad(exp_log_likelihood, 3)
-        d_tau2 = grad(exp_log_likelihood, 4)
+        d_tau1 = grad(vi.exp_log_likelihood, 3)
+        d_tau2 = grad(vi.exp_log_likelihood, 4)
 
         # computing moments
         nu_moment = deepcopy(nu)
@@ -101,7 +101,7 @@ class TestCaviUpdates(unittest.TestCase):
                                e_log_pi1, e_log_pi2, sigmas, X, alpha) + 1
         tau_AG = np.array([tau1_AG, tau2_AG])
 
-        tau_updates(tau, nu, alpha)
+        vi.tau_updates(tau, nu, alpha)
 
         assert np.shape(tau)==np.shape(tau_AG.T)
 
@@ -121,8 +121,8 @@ class TestCaviUpdates(unittest.TestCase):
         phi_var = np.ones(K_approx)
 
         # calling autodiff
-        d_phi1  = grad(exp_log_likelihood, 1)
-        d_phi2 = grad(exp_log_likelihood, 2)
+        d_phi1  = grad(vi.exp_log_likelihood, 1)
+        d_phi2 = grad(vi.exp_log_likelihood, 2)
 
         # compute moments
 
@@ -144,15 +144,7 @@ class TestCaviUpdates(unittest.TestCase):
             phi_var_AG = -1/(2.*phi2_AG)
             phi_mu_AG = np.dot(phi1_AG, np.diag(phi_var_AG))
 
-
-            phi_updates(nu, phi_mu, phi_var, X, sigmas, k) # cavi updates
-
-
-            #print('mean computed by autodiff: \n', phi_mu_AG[:,k])
-            #print('mean computed by cavi: \n', phi_mu[:,k])
-            #print('variance computed by autodiff: ', phi_var_AG[k])
-            #print('variance computed by cavi    : ', phi_var[k])
-            #print('\n')
+            vi.phi_updates(nu, phi_mu, phi_var, X, sigmas, k) # cavi updates
 
             self.assertTrue(np.allclose(phi_mu_AG[:,k], phi_mu[:,k]))
             self.assertTrue(np.allclose(phi_var_AG[k], phi_var[k]))
@@ -180,10 +172,7 @@ class TestElboComputation(unittest.TestCase):
     print(np.shape(A_test))
     print(np.shape(z_test))
 
-    # compute elbo
-    # [elbo,elbo_Term1,elbo_Term2,elbo_Term3,elbo_Term4,elbo_Term5,elbo_Term6,\
-    #      elbo_Term7] = compute_elbo(tau, nu, phi_mu, phi_var, X, sigmas, alpha)
-    elbo = compute_elbo(tau, nu, phi_mu, phi_var, X, sigmas, alpha)
+    elbo = vi.compute_elbo(tau, nu, phi_mu, phi_var, X, sigmas, alpha)
 
 
 

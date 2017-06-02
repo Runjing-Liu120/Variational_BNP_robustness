@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 import unittest
-import valez_finite_VI_lib as finite_lib
+import finite_approx.valez_finite_VI_lib as vi
 from autograd import grad
 import autograd.numpy as np
 import autograd.scipy as sp
@@ -22,7 +22,7 @@ sigma_eps  = 2
 alpha = 10
 
 pi, Z, mu, A, x = \
-    finite_lib.generate_data(num_samples, x_dim, k_inf, sigma_a, sigma_eps, alpha)
+    vi.generate_data(num_samples, x_dim, k_inf, sigma_a, sigma_eps, alpha)
 
 # initialize variational parameters
 k_approx = k_inf
@@ -97,7 +97,7 @@ class TestElboComputation(unittest.TestCase):
         print('1 / sqrt(num test draws) = %0.6f' % tol_scale)
 
         e_log_pi1, e_log_pi2, phi_moment1, phi_moment2, nu_moment = \
-            finite_lib.get_moments(tau, nu, phi_mu, phi_var)
+            vi.get_moments(tau, nu, phi_mu, phi_var)
 
         # pi (tau)
         self.assert_allclose(np.mean(pi_sample, 0),
@@ -122,15 +122,15 @@ class TestElboComputation(unittest.TestCase):
         # Autograd has not implemented certain entropy functions, so test our own.
         self.assert_allclose(
             np.sum(osp.stats.beta.entropy(tau[:, 0], tau[:, 1])),
-            finite_lib.pi_entropy(tau), tol=1e-12)
+            vi.pi_entropy(tau), tol=1e-12)
 
         self.assert_allclose(
             np.sum(osp.stats.norm.entropy(phi_mu, np.sqrt(phi_var_expanded))),
-            finite_lib.phi_entropy(phi_var, x_dim), tol=1e-12)
+            vi.phi_entropy(phi_var, x_dim), tol=1e-12)
 
         self.assert_allclose(
             np.sum(osp.stats.bernoulli.entropy(nu)),
-            finite_lib.nu_entropy(nu), tol=1e-12)
+            vi.nu_entropy(nu), tol=1e-12)
 
     def test_e_log_lik(self):
         n_test_samples = 10000
@@ -144,7 +144,7 @@ class TestElboComputation(unittest.TestCase):
         standard_error = 0.
         for i in range(num_params):
             tau, nu, phi_mu, phi_var = \
-                finite_lib.initialize_parameters(num_samples, x_dim, k_approx)
+                vi.initialize_parameters(num_samples, x_dim, k_approx)
             phi_var_expanded = np.array([ phi_var for d in range(x_dim)])
 
             z_sample, a_sample, pi_sample = \
@@ -162,9 +162,9 @@ class TestElboComputation(unittest.TestCase):
                          np.std(sample_e_log_lik) / np.sqrt(n_test_samples) ])
 
             e_log_pi1, e_log_pi2, phi_moment1, phi_moment2, nu_moment = \
-                finite_lib.get_moments(tau, nu, phi_mu, phi_var)
+                vi.get_moments(tau, nu, phi_mu, phi_var)
 
-            ell_by_param[i] = finite_lib.exp_log_likelihood(
+            ell_by_param[i] = vi.exp_log_likelihood(
                 nu_moment, phi_moment1, phi_moment2, e_log_pi1, e_log_pi2,
                 sigmas, x, alpha)
 
