@@ -1,8 +1,8 @@
 #!/usr/bin/python
 
 import unittest
-from valez_finite_VI_lib import initialize_parameters, get_moments
-import generic_optimization_lib as packing
+from finite_approx.valez_finite_VI_lib import initialize_parameters, get_moments
+import finite_approx.generic_optimization_lib as packing
 from copy import deepcopy
 
 import numpy as np
