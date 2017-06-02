@@ -88,7 +88,7 @@ def nu_entropy(nu):
     #log_1mnu = np.log(1 - nu)
     #log_nu = np.log(nu)
     #return -1 * np.sum(nu * log_nu + (1 - nu) * log_1mnu)
-    
+
 def phi_entropy(phi_var, D):
     return 0.5 * D * np.sum(np.log(2. * np.pi * phi_var) + 1)
 
@@ -143,8 +143,6 @@ def compute_elbo(tau, nu, phi_mu, phi_var, X, sigmas, alpha):
 
     D = X.shape[1]
     entropy = nu_entropy(nu) + phi_entropy(phi_var, D) + pi_entropy(tau)
-    print(e_log_lik)
-    print(entropy)
 
     return e_log_lik + entropy
 
