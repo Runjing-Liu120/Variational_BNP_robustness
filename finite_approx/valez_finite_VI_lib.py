@@ -4,13 +4,14 @@
 
 import autograd.numpy as np
 import autograd.scipy as sp
-
-from scipy.special import expit
-
-import matplotlib.pyplot as plt
 from copy import deepcopy
 import math
+import scipy as osp
+from scipy.special import expit
 
+
+#######################################
+# CAVI updates.
 
 def phi_updates(nu, phi_mu, phi_var, X, sigmas, k):
     s_eps = sigmas['eps']
@@ -40,7 +41,8 @@ def nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k, digamma_tau):
 
     nu_term1 = digamma_tau[k,0] - digamma_tau[k,1]
 
-    nu_term2 = (1. / (2. * s_eps)) * (phi_var[k]*D + np.dot(phi_mu[:,k], phi_mu[:,k]))
+    nu_term2 = (1. / (2. * s_eps)) * (phi_var[k] * D + \
+                np.dot(phi_mu[:,k], phi_mu[:,k]))
 
     nu_term3 = (1./s_eps) * np.dot(phi_mu[:, k], X[n, :] - \
                np.dot(phi_mu, nu[n, :]) + nu[n,k] * phi_mu[:, k])
@@ -79,6 +81,39 @@ def cavi_updates(tau, nu, phi_mu, phi_var, X, alpha, sigmas):
     tau_updates(tau, nu, alpha)
 
 
+#######################################
+# Log likelihood given parameters.
+
+def log_p_x_conditional(x, z, a, sigma_eps):
+    x_centered = x - np.matmul(z, a.T)
+    var_eps = sigma_eps
+    return -0.5 * np.sum(x_centered ** 2) / var_eps
+
+
+def log_p_z(z, pi):
+    return np.sum(z * np.log(pi) + (1 - z) * np.log(1 - pi))
+
+
+def log_p_a(a, sigma_a):
+    var_a = sigma_a
+    return -0.5 * np.sum(a ** 2) / var_a
+
+
+def log_p_pi(pi, alpha, k_approx):
+    param = alpha / float(k_approx)
+    return np.sum((param - 1) * np.log(pi))
+
+
+def log_lik(x, z, a, pi, sigma_eps, sigma_a, alpha, k_approx):
+    return \
+        log_p_x_conditional(x, z, a, sigma_eps) + \
+        log_p_pi(pi, alpha, k_approx) + log_p_z(z, pi) + log_p_a(a, sigma_a)
+
+
+#######################################
+# Variational entropies.  Note that we cannot use the scipy ones because
+# they are not yet supported by autograd.
+
 def nu_entropy(nu):
     log_1mnu = np.log(1 - nu)
     log_nu = np.log(nu)
@@ -106,6 +141,9 @@ def pi_entropy(tau):
         (tau[:, 1] - 1.) * digamma_tau1 + \
         (tau[:, 0] + tau[:, 1] - 2) * digamma_tausum)
 
+
+##############################################
+# Variational ELBO and helper functions.
 
 def get_moments(tau, nu, phi_mu, phi_var):
     digamma_tausum = sp.special.digamma(np.sum(tau, 1))
@@ -154,7 +192,8 @@ def exp_log_likelihood(nu_moment, phi_moment1, phi_moment2, \
 
     # Compute the beta, bernoulli, and A terms.
     beta_lh = (alpha / float(K) - 1.) * np.sum(e_log_pi1)
-    bern_lh = np.sum(nu_moment * (e_log_pi1 - e_log_pi2)) + N * np.sum(e_log_pi2)
+    bern_lh = np.sum(nu_moment * (e_log_pi1 - e_log_pi2)) + \
+              N * np.sum(e_log_pi2)
     norm_a_term = -0.5 * np.sum(phi_moment2) / sigma_a
 
     # Compute the data likelihood term
@@ -168,6 +207,26 @@ def exp_log_likelihood(nu_moment, phi_moment1, phi_moment2, \
 
     return beta_lh + bern_lh + norm_a_term + norm_x_term
 
+
+# Draw from the variational disribution.
+def generate_parameter_draws(nu, phi_mu, phi_var_expanded, tau, n_test_samples):
+    z_sample = np.random.binomial(
+        1, nu, size=(n_test_samples, nu.shape[0], nu.shape[1]))
+
+    # A version of phi_var with the same shape as phi_mu
+    a_sample = np.random.normal(
+        phi_mu, phi_var_expanded,
+        (n_test_samples, phi_mu.shape[0], phi_mu.shape[1]))
+
+    # The numpy beta draws seem to actually hit zero and one, unlike scipy.
+    pi_sample = osp.stats.beta.rvs(tau[:, 0], tau[:, 1],
+                                   size=(n_test_samples, tau.shape[0]))
+
+    return z_sample, a_sample, pi_sample
+
+
+####################################
+# Initialization and generation of data sets.
 
 def initialize_parameters(Num_samples, D, K_approx):
     # tau1, tau2 -- beta parameters for v

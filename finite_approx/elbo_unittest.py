@@ -41,48 +41,6 @@ phi_var_expanded = np.array([ phi_var for d in range(x_dim)])
 # compute elbo
 sigmas = {'eps': sigma_eps, 'A': sigma_a}
 
-# generate samples to compute means
-def generate_parameter_draws(nu, phi_mu, phi_var_expanded, tau, n_test_samples):
-    z_sample = np.random.binomial(
-        1, nu, size=(n_test_samples, nu.shape[0], nu.shape[1]))
-
-    # A version of phi_var with the same shape as phi_mu
-    a_sample = np.random.normal(
-        phi_mu, phi_var_expanded,
-        (n_test_samples, phi_mu.shape[0], phi_mu.shape[1]))
-
-    # The numpy beta draws seem to actually hit zero and one, unlike scipy.
-    pi_sample = osp.stats.beta.rvs(tau[:, 0], tau[:, 1],
-                                   size=(n_test_samples, tau.shape[0]))
-
-    return z_sample, a_sample, pi_sample
-
-
-def log_p_x_conditional(x, z, a, sigma_eps):
-    x_centered = x - np.matmul(z, a.T)
-    var_eps = sigma_eps
-    return -0.5 * np.sum(x_centered ** 2) / var_eps
-
-
-def log_p_z(z, pi):
-    return np.sum(z * np.log(pi) + (1 - z) * np.log(1 - pi))
-
-
-def log_p_a(a, sigma_a):
-    var_a = sigma_a
-    return -0.5 * np.sum(a ** 2) / var_a
-
-
-def log_p_pi(pi, alpha, k_approx):
-    param = alpha / float(k_approx)
-    return np.sum((param - 1) * np.log(pi))
-
-
-def log_lik(x, z, a, pi, sigma_eps, sigma_a, alpha, k_approx):
-    return \
-        log_p_x_conditional(x, z, a, sigma_eps) + \
-        log_p_pi(pi, alpha, k_approx) + log_p_z(z, pi) + log_p_a(a, sigma_a)
-
 
 class TestElboComputation(unittest.TestCase):
     def assert_allclose(self, x, y, tol=1e-12):
@@ -91,8 +49,8 @@ class TestElboComputation(unittest.TestCase):
     def test_moments(self):
         n_test_samples = 10**5
         tol_scale = 1. / np.sqrt(n_test_samples)
-        z_sample, a_sample, pi_sample = \
-            generate_parameter_draws(nu, phi_mu, phi_var_expanded, tau, n_test_samples)
+        z_sample, a_sample, pi_sample = vi.generate_parameter_draws(
+            nu, phi_mu, phi_var_expanded, tau, n_test_samples)
 
         print('1 / sqrt(num test draws) = %0.6f' % tol_scale)
 
@@ -148,12 +106,13 @@ class TestElboComputation(unittest.TestCase):
             phi_var_expanded = np.array([ phi_var for d in range(x_dim)])
 
             z_sample, a_sample, pi_sample = \
-                generate_parameter_draws(nu, phi_mu, phi_var_expanded, \
-                                         tau, n_test_samples)
+                vi.generate_parameter_draws(nu, phi_mu, phi_var_expanded, \
+                                            tau, n_test_samples)
 
             sample_e_log_lik = [
-                log_lik(x, z_sample[n, :, :], a_sample[n, :, :], pi_sample[n, :],
-                        sigma_eps, sigma_a, alpha, k_approx) \
+                vi.log_lik(x, z_sample[n, :, :], a_sample[n, :, :],
+                           pi_sample[n, :], sigma_eps, sigma_a, alpha,
+                           k_approx) \
                 for n in range(n_test_samples) ]
 
             sample_ell_by_param[i] = np.mean(sample_e_log_lik)
