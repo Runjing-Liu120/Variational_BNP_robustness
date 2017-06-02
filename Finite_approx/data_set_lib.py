@@ -29,7 +29,7 @@ class OptimzationTrace(object):
         self.params.append(params)
         self.kl.append(kl)
         if self.verbose and self.stepnum % self.print_every == 0:
-            print('Step {} KL: {}'.format(self.stepnum, kl))
+            print('Step {} objective: {}'.format(self.stepnum, kl))
         self.stepnum += 1
 
 
