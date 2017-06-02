@@ -12,10 +12,7 @@ from copy import deepcopy
 import math
 
 
-# data_shape: D,N,K
-
 def phi_updates(nu, phi_mu, phi_var, X, sigmas, k):
-
     s_eps = sigmas['eps']
     s_A = sigmas['A']
     D = np.shape(X)[1]
@@ -50,7 +47,6 @@ def nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k, digamma_tau):
 
     script_V = nu_term1 - nu_term2 + nu_term3
 
-    #nu[n,k] = 1./(1.+np.exp(-script_V))
     nu[n,k] = expit(script_V)
 
 
@@ -81,102 +77,6 @@ def cavi_updates(tau, nu, phi_mu, phi_var, X, alpha, sigmas):
         phi_updates(nu, phi_mu, phi_var, X, sigmas, k)
 
     tau_updates(tau, nu, alpha)
-
-
-def exp_log_likelihood_old(nu_moment, phi_moment1, phi_moment2, \
-                           E_log_pi1, E_log_pi2, sigmas, X, alpha):
-
-    sigma_eps = sigmas['eps']
-    sigma_A = sigmas['A']
-    D = np.shape(X)[1]
-    N = np.shape(X)[0]
-    K = np.shape(phi_moment1)[1]
-
-    beta_lh = (alpha/K - 1.)*np.sum(E_log_pi1)
-    bern_lh = np.sum(np.dot(nu_moment[n,:], E_log_pi1) \
-                            + np.dot(1.-nu_moment[n,:], E_log_pi2) for n in range(N))
-    Normal_A = -1/(2.*sigma_A) * np.sum(phi_moment2)
-
-    Normal_X_sum = 0
-    ## compute the data likelihood term
-    for n in range(N):
-        dum1 = 2.*np.sum(np.sum(nu_moment[n,i] * nu_moment[n,j] * \
-                                np.dot(phi_moment1[:,i],phi_moment1[:,j]) \
-                                for i in range(j)) for j in range(K))
-        dum2 = np.dot(nu_moment[n,:] , phi_moment2 )
-
-        dum3 = -2. * np.dot(X[n,:], np.dot(phi_moment1, nu_moment[n,:]))
-
-        # dum4 = np.dot(X[n,:], X[n,:])
-        Normal_X_sum += dum1 + dum2 + dum3
-
-    Normal_X = -1/(2*sigma_eps)*Normal_X_sum
-
-    y = beta_lh + bern_lh + Normal_A + Normal_X
-    return(y)
-
-
-def compute_elbo_old(tau, nu, phi_mu, phi_var, X, sigmas, alpha):
-
-    sigma_eps = sigmas['eps']
-    sigma_a = sigmas['A']
-    D = np.shape(X)[1]
-    N = np.shape(X)[0]
-    K = np.shape(phi_mu)[1]
-
-    digamma_tau = sp.special.digamma(tau)
-    digamma_sum_tau = sp.special.digamma(tau[:,0] + tau[:,1])
-
-    # bernoulli terms
-    elbo_term1 = (alpha/K - 1) * np.sum( digamma_tau[:,0] - digamma_sum_tau[:] )
-
-    elbo_term2 = np.sum(np.dot(nu, digamma_tau[:,0]) + np.dot(1-nu, digamma_tau[:,1])) \
-                - N * np.sum(digamma_sum_tau)
-
-    # elbo_term3 = \
-    #     -K*D/2.*np.log(2.*np.pi*sigma_a) - 1./(2.*sigma_a) *\
-    #     (np.sum(phi_var)*D + np.trace(np.dot(phi_mu.T , phi_mu)))
-
-    elbo_term3 = \
-        - 1./(2.*sigma_a) * (np.sum(phi_var)*D + np.trace(np.dot(phi_mu.T , phi_mu)))
-
-    # elbo_term4 = \
-    #     -N * D/2. * np.log(2. * np.pi * sigma_eps)\
-    #     -1/(2. * sigma_eps) * np.trace(np.dot(X.T, X)) \
-    #     +1/(sigma_eps) * np.trace(np.dot(np.dot(nu, phi_mu.T), X.T))\
-    #     -1/(2. * sigma_eps) * np.sum(np.dot(nu, D*phi_var + \
-    #         np.diag(np.dot(phi_mu.T, phi_mu)))) \
-    #     -1/(2.*sigma_eps) * np.trace(np.dot(np.dot( \
-    #         nu, np.dot(phi_mu.T, phi_mu) - np.identity(K) \
-    #         * np.diag(np.dot(phi_mu.T, phi_mu))), nu.T))
-
-    elbo_term4 = \
-        +1/(sigma_eps) * np.trace(np.dot(np.dot(nu, phi_mu.T), X.T))\
-        -1/(2. * sigma_eps) * np.sum(np.dot(nu, D*phi_var + \
-            np.diag(np.dot(phi_mu.T, phi_mu)))) \
-        -1/(2.*sigma_eps) * np.trace(np.dot(np.dot( \
-            nu, np.dot(phi_mu.T, phi_mu) - np.identity(K) \
-            * np.diag(np.dot(phi_mu.T, phi_mu))), nu.T))
-
-    # The log beta function is not in autograd's scipy.
-    log_beta = sp.special.gammaln(tau[:,0]) + sp.special.gammaln(tau[:,1]) \
-        - sp.special.gammaln(tau[:,0] + tau[:,1])
-
-    elbo_term5 = np.sum(log_beta - \
-        (tau[:,0] - 1) * digamma_tau[:,0] - \
-        (tau[:,1] - 1) * digamma_tau[:,1] + \
-        (tau[:,0] + tau[:,1] -2.) *  digamma_sum_tau[:])
-
-    elbo_term6 = np.sum(1. / 2. * np.log((2. * np.pi * np.exp(1.) * \
-        phi_var)**D))
-
-    elbo_term7 = np.sum(np.sum( -np.log(nu ** nu) - np.log((1.-nu) ** (1.-nu)) ))
-
-    elbo = elbo_term1 + elbo_term2 + elbo_term3 + elbo_term4 + elbo_term5 + \
-           elbo_term6 + elbo_term7
-
-    return(elbo, elbo_term1, elbo_term2, elbo_term3, elbo_term4, \
-          elbo_term5, elbo_term6, elbo_term7)
 
 
 def nu_entropy(nu):
@@ -245,7 +145,6 @@ def compute_elbo(tau, nu, phi_mu, phi_var, X, sigmas, alpha):
 
 def exp_log_likelihood(nu_moment, phi_moment1, phi_moment2, \
                        e_log_pi1, e_log_pi2, sigmas, X, alpha):
-
     sigma_eps = sigmas['eps']
     sigma_a = sigmas['A']
 
@@ -257,7 +156,6 @@ def exp_log_likelihood(nu_moment, phi_moment1, phi_moment2, \
     beta_lh = (alpha / float(K) - 1.) * np.sum(e_log_pi1)
     bern_lh = np.sum(nu_moment * (e_log_pi1 - e_log_pi2)) + N * np.sum(e_log_pi2)
     norm_a_term = -0.5 * np.sum(phi_moment2) / sigma_a
-    #norm_a_term = -0.5 * np.sum(phi_moment1 ** 2) / sigma_a
 
     # Compute the data likelihood term
     phi_moment1_outer = np.matmul(phi_moment1.T, phi_moment1)

@@ -1,9 +1,5 @@
 #!/usr/bin/python3
 
-# Alarmingly, this fails with python2!
-
-# First unit test-- check CAVI updates
-
 import unittest
 import valez_finite_VI_lib as finite_lib
 from autograd import grad
@@ -44,7 +40,6 @@ phi_var_expanded = np.array([ phi_var for d in range(x_dim)])
 
 # compute elbo
 sigmas = {'eps': sigma_eps, 'A': sigma_a}
-# elbo = finite_lib.compute_elbo(tau, nu, phi_mu, phi_var, x, sigmas, alpha)
 
 # generate samples to compute means
 def generate_parameter_draws(nu, phi_mu, phi_var_expanded, tau, n_test_samples):
@@ -61,14 +56,6 @@ def generate_parameter_draws(nu, phi_mu, phi_var_expanded, tau, n_test_samples):
                                    size=(n_test_samples, tau.shape[0]))
 
     return z_sample, a_sample, pi_sample
-
-
-n_test_samples = 10**5
-tol_scale = 1. / np.sqrt(n_test_samples)
-z_sample, a_sample, pi_sample = \
-    generate_parameter_draws(nu, phi_mu, phi_var_expanded, tau, n_test_samples)
-
-print('1 / sqrt(num test draws) = %0.6f' % tol_scale)
 
 
 def log_p_x_conditional(x, z, a, sigma_eps):
@@ -102,6 +89,13 @@ class TestElboComputation(unittest.TestCase):
         self.assertTrue(np.allclose(x, y, tol))
 
     def test_moments(self):
+        n_test_samples = 10**5
+        tol_scale = 1. / np.sqrt(n_test_samples)
+        z_sample, a_sample, pi_sample = \
+            generate_parameter_draws(nu, phi_mu, phi_var_expanded, tau, n_test_samples)
+
+        print('1 / sqrt(num test draws) = %0.6f' % tol_scale)
+
         e_log_pi1, e_log_pi2, phi_moment1, phi_moment2, nu_moment = \
             finite_lib.get_moments(tau, nu, phi_mu, phi_var)
 
@@ -138,27 +132,17 @@ class TestElboComputation(unittest.TestCase):
             np.sum(osp.stats.bernoulli.entropy(nu)),
             finite_lib.nu_entropy(nu), tol=1e-12)
 
-    def test_e_log_lik_old(self):
-        e_log_pi1, e_log_pi2, phi_moment1, phi_moment2, nu_moment = \
-            finite_lib.get_moments(tau, nu, phi_mu, phi_var)
-
-        ell_old = finite_lib.exp_log_likelihood_old(
-            nu_moment, phi_moment1, phi_moment2, e_log_pi1, e_log_pi2,
-            sigmas, x, alpha)
-
-        ell = finite_lib.exp_log_likelihood(
-            nu_moment, phi_moment1, phi_moment2, e_log_pi1, e_log_pi2,
-            sigmas, x, alpha)
-
-        print('New vs old log likelihood:')
-        print(ell_old)
-        print(ell)
-
-
     def test_e_log_lik(self):
         n_test_samples = 10000
 
-        for i in range(5):
+        # Our expected log likelihood should only differ from a sample average
+        # of the generated log likelihood by a constant as the parameters
+        # vary.  Check this using num_param different random parameters.
+        num_params = 5
+        ell_by_param = np.full(num_params, float('nan'))
+        sample_ell_by_param = np.full(num_params, float('nan'))
+        standard_error = 0.
+        for i in range(num_params):
             tau, nu, phi_mu, phi_var = \
                 finite_lib.initialize_parameters(num_samples, x_dim, k_approx)
             phi_var_expanded = np.array([ phi_var for d in range(x_dim)])
@@ -172,45 +156,21 @@ class TestElboComputation(unittest.TestCase):
                         sigma_eps, sigma_a, alpha, k_approx) \
                 for n in range(n_test_samples) ]
 
+            sample_ell_by_param[i] = np.mean(sample_e_log_lik)
+            standard_error = \
+                np.max([ standard_error,
+                         np.std(sample_e_log_lik) / np.sqrt(n_test_samples) ])
+
             e_log_pi1, e_log_pi2, phi_moment1, phi_moment2, nu_moment = \
                 finite_lib.get_moments(tau, nu, phi_mu, phi_var)
 
-            ell = finite_lib.exp_log_likelihood(
+            ell_by_param[i] = finite_lib.exp_log_likelihood(
                 nu_moment, phi_moment1, phi_moment2, e_log_pi1, e_log_pi2,
                 sigmas, x, alpha)
 
-            print('---------')
-            print(np.mean(sample_e_log_lik) - ell)
-            print(np.std(sample_e_log_lik) / np.sqrt(n_test_samples))
-
-    def test_old_elbo(self):
-        print('New vs old elbo:')
-        print(finite_lib.compute_elbo_old(tau, nu, phi_mu, phi_var, x, sigmas, alpha)[0])
-        print(finite_lib.compute_elbo(tau, nu, phi_mu, phi_var, x, sigmas, alpha))
-        print('--------')
-
-    # def test_term1(self):
-    #     term1_sample = (alpha/k_approx - 1) * np.sum(np.mean(np.log(pi_sample), 1))
-    #     self.assertAlmostEqual(term1_sample, elbo_term1, places = 1)
-    #
-    # def test_term3(self):
-    #     term3_sample = -np.trace(np.einsum('jkl,jil->ki', a_sample, a_sample)\
-    #                     /n_test_samples)
-    #     self.assertAlmostEqual(elbo_term3, \
-    #         -k_approx*x_dim/2.*np.log(2.*np.pi*sigma_a) + term3_sample/(2*sigma_a), \
-    #         places = 1)
-    #
-    # def test_term4(self):
-    #     term4_sample = 0
-    #     for n in range(num_samples):
-    #         tmp = x[n,:][:,np.newaxis] \
-    #                 - np.einsum('il,ikl->kl', z_sample[n,:,:], a_sample)
-    #
-    #         term4_sample += np.einsum('jk,jk', tmp, tmp)/n_test_samples
-    #
-    #     self.assertAlmostEqual(elbo_term4, \
-    #         -num_samples*x_dim/2.*np.log(2.*np.pi*sigma_eps) - term4_sample/(2.*sigma_eps), \
-    #         places = 1)
+        print('Mean log likelihood standard error: %0.5f' % standard_error)
+        self.assertTrue(np.std(ell_by_param - sample_ell_by_param) < \
+                        3. * standard_error)
 
 
 if __name__ == '__main__':
