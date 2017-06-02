@@ -52,11 +52,14 @@ class DataSet(object):
         self.get_kl_sens_hess = \
             jacobian(self.get_wrapped_kl_hyperparams_hyperparamgrad, argnum=0)
 
+        self.get_moments_vector_jac = jacobian(self.get_moments_vector)
+
         self.trace = OptimzationTrace()
 
     def unpack_params(self, params):
          return packing.unpack_params(
-            params, self.data_shape['K'], self.data_shape['D'], self.data_shape['N'])
+            params, self.data_shape['K'], self.data_shape['D'],
+            self.data_shape['N'])
 
     def cavi_updates(self, tau, nu, phi_mu, phi_var):
         vi.cavi_updates(tau, nu, phi_mu, phi_var, \
@@ -80,17 +83,6 @@ class DataSet(object):
     def get_prediction(self, params):
         tau, phi_mu, phi_var, nu = self.unpack_params(params)
         return np.matmul(nu, phi_mu.T)
-
-    def get_moments(self, params):
-        # Return moments of interest.
-        tau, phi_mu, phi_var, nu = self.unpack_params(params)
-        e_log_pi, e_log_pi2, e_mu, phi_moment2, nu_moment = \
-            get_moments(tau, nu, phi_mu, phi_var)
-        return e_log_pi, e_mu
-
-    def get_moments_vector(self, params):
-        e_log_pi, e_mu = self.get_moments(params)
-        return packing.pack_moments(e_log_pi, e_mu)
 
     def run_cavi(self, tau, nu, phi_mu, phi_var, max_iter=200, tol=1e-6):
         params = packing.flatten_params(tau, nu, phi_mu, phi_var)
