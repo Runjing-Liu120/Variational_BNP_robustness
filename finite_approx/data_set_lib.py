@@ -7,8 +7,8 @@ from copy import deepcopy
 
 from scipy import optimize
 
-import valez_finite_VI_lib as vi
-import generic_optimization_lib as packing
+import finite_approx.valez_finite_VI_lib as vi
+import finite_approx.generic_optimization_lib as packing
 
 
 class OptimzationTrace(object):
@@ -19,14 +19,14 @@ class OptimzationTrace(object):
 
     def reset(self):
         self.stepnum = 0
-        self.kl = []
+        self.objective = []
         self.params = []
 
-    def update(self, params, kl):
+    def update(self, params, objective):
         self.params.append(params)
-        self.kl.append(kl)
+        self.objective.append(objective)
         if self.verbose and self.stepnum % self.print_every == 0:
-            print('Step {} objective: {}'.format(self.stepnum, kl))
+            print('Step {} objective: {}'.format(self.stepnum, objective))
         self.stepnum += 1
 
 
@@ -51,8 +51,6 @@ class DataSet(object):
             grad(self.wrapped_kl_hyperparams, argnum=1)
         self.get_kl_sens_hess = \
             jacobian(self.get_wrapped_kl_hyperparams_hyperparamgrad, argnum=0)
-
-        self.get_moments_vector_jac = jacobian(self.get_moments_vector)
 
         self.trace = OptimzationTrace()
 
