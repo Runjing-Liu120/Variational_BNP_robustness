@@ -86,7 +86,7 @@ class VI_algorithms(object):
                 break
 
             if (stepnum>0) & (diff < 0):
-                print('elbo decreased!  Difference: ', diff)
+                print('elbo decreased!  Difference: ', diff, 'elbo: ', elbo[-1])
                 err = True
                 break
 
@@ -94,7 +94,7 @@ class VI_algorithms(object):
 
         if not(err):
             if max_iter <= stepnum:
-                print('warning: max iteration reached')
+                print('Max iteration reached', elbo[-1])
             else:
                 print('elbo converged: ', elbo[-1])
 
@@ -206,9 +206,9 @@ class VI_algorithms(object):
             stepnum = stepnum + 1
 
         if max_iter <= stepnum:
-            print('warning: max iteration reached')
+            print('Max iteration reached; elbo: ', elbo[-1])
         else:
-            print('elbo converged')
+            print('elbo converged', elbo[-1])
 
         return self.tau, self.nu, self.phi_mu, self.phi_var, elbo
 
