@@ -34,7 +34,8 @@ def phi_updates(nu, phi_mu, phi_var, X, sigmas, k):
         * (1 / s_A + np.sum(nu[:, k]) / s_eps)**(-1)
 
 
-def nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k, digamma_tau):
+def nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k, digamma_tau, \
+            anneal_temp = 1):
     s_eps = sigmas['eps']
     s_A = sigmas['A']
     D = np.shape(X)[1]
@@ -48,7 +49,7 @@ def nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k, digamma_tau):
     nu_term3 = (1./s_eps) * np.dot(phi_mu[:, k], X[n, :] - \
                np.dot(phi_mu, nu[n, :]) + nu[n,k] * phi_mu[:, k])
 
-    script_V = nu_term1 - nu_term2 + nu_term3
+    script_V = anneal_temp * (nu_term1 - nu_term2 + nu_term3)
 
     nu[n,k] = expit(script_V)
 
@@ -78,7 +79,7 @@ def cavi_updates(tau, nu, phi_mu, phi_var, X, alpha, sigmas):
 
     for k in range(K):
         phi_updates(nu, phi_mu, phi_var, X, sigmas, k)
-
+        
     tau_updates(tau, nu, alpha)
 
 
