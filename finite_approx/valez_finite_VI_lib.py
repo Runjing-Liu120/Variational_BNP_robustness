@@ -204,19 +204,28 @@ def exp_log_likelihood(nu_moment, phi_moment1, phi_moment2, \
     return beta_lh + bern_lh + norm_a_term + norm_x_term
 
 
-# Draw from the variational disribution.
-def generate_parameter_draws(nu, phi_mu, phi_var_expanded, tau, n_test_samples):
-    z_sample = np.random.binomial(
-        1, nu, size=(n_test_samples, nu.shape[0], nu.shape[1]))
+# Draw from the variational (or conditional) disribution.
+def draw_z(nu, num_samples):
+    return np.random.binomial(1, nu, size=(num_samples, nu.shape[0], nu.shape[1]))
 
-    # A version of phi_var with the same shape as phi_mu
-    a_sample = np.random.normal(
+
+def draw_a(phi_mu, phi_var_expanded, num_samples):
+    # phi_var_expanded is a version of phi_var with the same shape as phi_mu
+    return np.random.normal(
         phi_mu, phi_var_expanded,
-        (n_test_samples, phi_mu.shape[0], phi_mu.shape[1]))
+        (num_samples, phi_mu.shape[0], phi_mu.shape[1]))
 
+
+def draw_pi(tau, num_samples):
     # The numpy beta draws seem to actually hit zero and one, unlike scipy.
-    pi_sample = osp.stats.beta.rvs(tau[:, 0], tau[:, 1],
-                                   size=(n_test_samples, tau.shape[0]))
+    return osp.stats.beta.rvs(tau[:, 0], tau[:, 1],
+                              size=(num_samples, tau.shape[0]))
+
+
+def generate_parameter_draws(nu, phi_mu, phi_var_expanded, tau, n_test_samples):
+    z_sample = draw_z(nu, n_test_samples)
+    a_sample = draw_a(phi_mu, phi_var_expanded, n_test_samples)
+    pi_sample = draw_pi(tau, n_test_samples)
 
     return z_sample, a_sample, pi_sample
 
