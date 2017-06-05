@@ -55,8 +55,8 @@ def tau_updates(tau, nu, alpha):
     N = np.shape(nu)[0]
     K = np.shape(nu)[1]
 
-    tau[:, 0] = alpha / K + np.sum(nu,0)
-    tau[:, 1] = N  + 1 - np.sum(nu,0)
+    tau[:, 0] = alpha / K + np.sum(nu, 0)
+    tau[:, 1] = N  + 1 - np.sum(nu, 0)
 
 
 def cavi_updates(tau, nu, phi_mu, phi_var, X, alpha, sigmas):
@@ -151,9 +151,8 @@ def get_moments(tau, nu, phi_mu, phi_var):
 
     nu_moment = nu
 
-    D = phi_mu.shape[0]
     phi_moment1 = phi_mu
-    phi_moment2 = np.diag(np.dot(phi_mu.T, phi_mu) + D * phi_var)
+    phi_moment2 = phi_mu ** 2 + phi_var
 
     return e_log_pi1, e_log_pi2, phi_moment1, phi_moment2, nu_moment
 
@@ -172,7 +171,7 @@ def compute_elbo(tau, nu, phi_mu, phi_var, X, sigmas, alpha):
 
     e_log_lik = exp_log_likelihood(
         nu_moment, phi_moment1, phi_moment2,  e_log_pi1, e_log_pi2, \
-        sigmas, X, alpha)
+        sigmas['A'], sigmas['eps'], X, alpha)
 
     D = X.shape[1]
     entropy = nu_entropy(nu) + phi_entropy(phi_var, D) + pi_entropy(tau)
@@ -181,10 +180,7 @@ def compute_elbo(tau, nu, phi_mu, phi_var, X, sigmas, alpha):
 
 
 def exp_log_likelihood(nu_moment, phi_moment1, phi_moment2, \
-                       e_log_pi1, e_log_pi2, sigmas, X, alpha):
-    sigma_eps = sigmas['eps']
-    sigma_a = sigmas['A']
-
+                       e_log_pi1, e_log_pi2, sigma_a, sigma_eps, X, alpha):
     D = X.shape[1]
     N = X.shape[0]
     K = nu_moment.shape[1]
@@ -201,7 +197,8 @@ def exp_log_likelihood(nu_moment, phi_moment1, phi_moment2, \
     norm_x_nu_quadratic = \
         np.einsum('ni,nj,ij', nu_moment, nu_moment, phi_moment1_outer)
     norm_x_nu_linear = \
-        np.sum(nu_moment * (-2. * np.matmul(X, phi_moment1) + phi_moment2))
+        np.sum(nu_moment * (-2. * np.matmul(X, phi_moment1) +
+                            np.sum(phi_moment2, 0)))
     norm_x_term = -0.5 * (norm_x_nu_linear + norm_x_nu_quadratic) / sigma_eps
 
     return beta_lh + bern_lh + norm_a_term + norm_x_term

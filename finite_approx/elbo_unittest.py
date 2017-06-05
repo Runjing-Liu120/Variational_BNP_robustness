@@ -38,9 +38,6 @@ phi_mu = np.random.normal(0, 1, [x_dim, k_approx])
 phi_var = np.ones(k_approx)
 phi_var_expanded = np.array([ phi_var for d in range(x_dim)])
 
-# compute elbo
-sigmas = {'eps': sigma_eps, 'A': sigma_a}
-
 
 class TestElboComputation(unittest.TestCase):
     def assert_allclose(self, x, y, tol=1e-12, msg=''):
@@ -73,8 +70,9 @@ class TestElboComputation(unittest.TestCase):
 
         # Mu (phi)
         a_sample_mean = np.mean(a_sample, 0)
-        a2_sample = np.sum(a_sample ** 2, 1)
-        a2_sample_mean = np.mean(a2_sample, 0)
+        #a2_sample = np.sum(a_sample ** 2, 1)
+        #a2_sample_mean = np.mean(a2_sample, 0)
+        a2_sample_mean = np.mean(a_sample ** 2, 0)
         self.assert_allclose(a_sample_mean, phi_moment1, 40 * tol_scale, 'a')
         self.assert_allclose(a2_sample_mean, phi_moment2, 40 * tol_scale, 'a2')
 
@@ -127,7 +125,7 @@ class TestElboComputation(unittest.TestCase):
 
             ell_by_param[i] = vi.exp_log_likelihood(
                 nu_moment, phi_moment1, phi_moment2, e_log_pi1, e_log_pi2,
-                sigmas, x, alpha)
+                sigma_a, sigma_eps, x, alpha)
 
         print('Mean log likelihood standard error: %0.5f' % standard_error)
         self.assertTrue(np.std(ell_by_param - sample_ell_by_param) < \
