@@ -15,7 +15,7 @@ np.random.seed(42)
 
 # draw data
 num_samples = 10
-x_dim = 2
+x_dim = 4
 k_inf = 3
 sigma_a = 1.2
 sigma_eps  = 2
@@ -43,8 +43,10 @@ sigmas = {'eps': sigma_eps, 'A': sigma_a}
 
 
 class TestElboComputation(unittest.TestCase):
-    def assert_allclose(self, x, y, tol=1e-12):
-        self.assertTrue(np.allclose(x, y, tol))
+    def assert_allclose(self, x, y, tol=1e-12, msg=''):
+        self.assertTrue(np.allclose(x, y, tol),
+                        msg='{}\nx !~ y where\nx = {}\ny = {}\ntol = {}'.format(
+                        msg, x, y, tol))
 
     def test_moments(self):
         n_test_samples = 10**5
@@ -67,14 +69,14 @@ class TestElboComputation(unittest.TestCase):
 
         # Z (nu)
         z_sample_mean = np.mean(z_sample, 0)
-        self.assert_allclose(z_sample_mean, nu_moment, 20 * tol_scale)
+        self.assert_allclose(z_sample_mean, nu_moment, 20 * tol_scale, 'z')
 
         # Mu (phi)
         a_sample_mean = np.mean(a_sample, 0)
         a2_sample = np.sum(a_sample ** 2, 1)
         a2_sample_mean = np.mean(a2_sample, 0)
-        self.assert_allclose(a_sample_mean, phi_moment1, 30 * tol_scale)
-        self.assert_allclose(a2_sample_mean, phi_moment2, 30 * tol_scale)
+        self.assert_allclose(a_sample_mean, phi_moment1, 40 * tol_scale, 'a')
+        self.assert_allclose(a2_sample_mean, phi_moment2, 40 * tol_scale, 'a2')
 
     def test_entropy(self):
         # Autograd has not implemented certain entropy functions, so test our own.

@@ -20,7 +20,6 @@ def phi_updates(nu, phi_mu, phi_var, X, sigmas, k):
     N = np.shape(X)[0]
     K = np.shape(phi_mu)[1]
 
-
     phi_var[k] = (1/s_A + np.sum(nu[:, k]) / s_eps)**(-1)
 
     phi_summation = 0
@@ -32,8 +31,7 @@ def phi_updates(nu, phi_mu, phi_var, X, sigmas, k):
         * (1 / s_A + np.sum(nu[:, k]) / s_eps)**(-1)
 
 
-def nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k, digamma_tau,
-               anneal_temp=1):
+def nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k, digamma_tau):
     s_eps = sigmas['eps']
     s_A = sigmas['A']
     D = np.shape(X)[1]
@@ -48,7 +46,7 @@ def nu_updates(tau, nu, phi_mu, phi_var, X, sigmas, n, k, digamma_tau,
     nu_term3 = (1./s_eps) * np.dot(phi_mu[:, k], X[n, :] - \
                np.dot(phi_mu, nu[n, :]) + nu[n,k] * phi_mu[:, k])
 
-    script_V = anneal_temp * (nu_term1 - nu_term2 + nu_term3)
+    script_V = nu_term1 - nu_term2 + nu_term3
 
     nu[n,k] = expit(script_V)
 
@@ -57,8 +55,8 @@ def tau_updates(tau, nu, alpha):
     N = np.shape(nu)[0]
     K = np.shape(nu)[1]
 
-    tau[:,0] = alpha/K + np.sum(nu,0)
-    tau[:,1] = N  + 1 - np.sum(nu,0)
+    tau[:, 0] = alpha / K + np.sum(nu,0)
+    tau[:, 1] = N  + 1 - np.sum(nu,0)
 
 
 def cavi_updates(tau, nu, phi_mu, phi_var, X, alpha, sigmas):
@@ -116,8 +114,9 @@ def log_lik(x, z, a, pi, sigma_eps, sigma_a, alpha, k_approx):
 # they are not yet supported by autograd.
 
 def nu_entropy(nu):
-    # (1 - nu) * np.log(1 - nu) is less numerically stable.
-    return -1 * np.sum(np.log(nu**nu) + np.log((1-nu)**(1-nu)))
+    log_1mnu = np.log(1 - nu)
+    log_nu = np.log(nu)
+    return -1 * np.sum(nu * log_nu + (1 - nu) * log_1mnu)
 
 
 def phi_entropy(phi_var, D):
@@ -263,70 +262,3 @@ def generate_data(num_samples, D, k_inf, sigma_a, sigma_eps, alpha):
     X = np.matmul(Z, A) + epsilon
 
     return pi, Z, mu, A, X
-
-
-def display_results(elbo, tau, nu, phi_mu, phi_var, X, Pi, Z, A, \
-    manual_perm = None):
-
-    D = np.shape(X)[1]
-    N = np.shape(X)[0]
-    K = np.shape(phi_mu)[1]
-
-    Pi_computed = tau[:,0]/(tau[:,0] + tau[:,1])
-    round_nu = np.round(nu*(nu>=0.9) + nu*(nu<=0.1)) + nu*(nu>=0.1)*(nu<=0.9)
-    print('Z (unpermuted): \n', Z[0:10])
-
-    # Find the minimizing permutation.
-    accuracy_mat = [[ np.sum(np.abs(Z[:, i] - nu[:, j]))/N for i in range(K) ]
-                      for j in range(K) ]
-    perm_tmp = np.argmin(accuracy_mat, 1)
-
-    # check that we have a true permuation
-    if len(perm_tmp) == len(set(perm_tmp)):
-        perm = perm_tmp
-    else:
-        print('** procedure did not give a true permutation')
-        if manual_perm == None:
-            perm = np.arange(K)
-        else:
-            perm = manual_perm
-
-    print('permutation: ', perm)
-
-    # print Z (permuted) and nu
-    print('Z (permuted) \n', Z[0:10, perm])
-    print('round_nu \n', round_nu[0:10,:])
-
-    print('l1 error (after permutation): ', \
-        [ np.sum(np.abs(Z[:, perm[i]] - nu[:, i]))/N for i in range(K) ])
-
-    # examine phi_mu
-    print('\n')
-    print('true A (permuted): \n', A[perm, :])
-    print('phi_mu: \n', phi_mu.transpose())
-
-    # examine Pi
-    print('\n')
-    print('true Pi (permuted): ', Pi)
-    print('computed Pi: ', Pi_computed)
-
-    # plot elbo
-    plt.clf()
-    plt.plot(elbo)
-    plt.xlabel('iteration')
-    plt.ylabel('elbo')
-    plt.show()
-    print('final elbo: ', elbo[-1])
-
-    # plot posterior predictive
-    pred_x = np.dot(nu, phi_mu.transpose())
-    for col in range(D):
-        plt.clf()
-        plt.plot(pred_x[:, col], X[:, col], 'ko')
-        diag = np.linspace(np.min(pred_x[:,col]),np.max(pred_x[:,col]))
-        plt.plot(diag,diag)
-        plt.title('Posterior predictive, column' + str(col))
-        plt.xlabel('predicted X')
-        plt.ylabel('true X')
-        plt.show()
-
