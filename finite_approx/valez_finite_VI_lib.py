@@ -211,8 +211,8 @@ def generate_data(Num_samples, D, K_inf, sigma_a, sigma_eps, alpha):
 
     return Pi, Z, mu, A, X
 
-def display_results(elbo, tau, nu, phi_mu, phi_var, X, Pi, Z, mu, A, alpha, \
-    sigma_eps, sigma_A, manual_perm = None):
+def display_results(elbo, tau, nu, phi_mu, phi_var, X, Pi, Z, A, \
+    manual_perm = None):
 
     D = np.shape(X)[1]
     N = np.shape(X)[0]
@@ -272,4 +272,6 @@ def display_results(elbo, tau, nu, phi_mu, phi_var, X, Pi, Z, mu, A, alpha, \
         diag = np.linspace(np.min(pred_x[:,col]),np.max(pred_x[:,col]))
         plt.plot(diag,diag)
         plt.title('Posterior predictive, column' + str(col))
+        plt.xlabel('predicted X')
+        plt.ylabel('true X')
         plt.show()

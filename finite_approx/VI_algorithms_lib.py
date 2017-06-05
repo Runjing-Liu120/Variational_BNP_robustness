@@ -94,7 +94,7 @@ class VI_algorithms(object):
 
         if not(err):
             if max_iter <= stepnum:
-                print('Max iteration reached', elbo[-1])
+                print('Max iteration reached; elbo: ', elbo[-1])
             else:
                 print('elbo converged: ', elbo[-1])
 
@@ -218,7 +218,7 @@ class VI_algorithms(object):
         stepnum = 0
         diff = 100
         elbo = np.array([])
-        err = False
+
         step_size = 0 # only necessary if doing stochastic annealing
 
         while diff > tol and stepnum < max_iter:
@@ -242,17 +242,16 @@ class VI_algorithms(object):
                 print('NAN ELBO.')
                 break
 
-            if (stepnum>0) & (diff < 0):
-                print('elbo decreased!  Difference: ', diff)
-                err = True
-                break
+            #if (stepnum>0) & (diff < 0):
+            #    print('elbo decreased!  Difference: ', diff)
+            #    err = True
+            #    break
 
             stepnum += 1
 
-        if not(err):
-            if max_iter <= stepnum:
-                print('warning: max iteration reached')
-            else:
-                print('elbo converged: ', elbo[-1])
+        if max_iter <= stepnum:
+            print('warning: max iteration reached; elbo: ', elbo[-1])
+        else:
+            print('elbo converged: ', elbo[-1])
 
         return self.tau, self.nu, self.phi_mu, self.phi_var, elbo
