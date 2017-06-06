@@ -250,8 +250,6 @@ def initialize_parameters(num_samples, D, k_approx):
 def generate_data(num_samples, D, k_inf, sigma_a, sigma_eps, alpha):
     pi = np.ones(k_inf) * .8
 
-    Z = np.zeros([num_samples, k_inf])
-
     # Parameters to draw A from MVN
     mu = np.zeros(D)
 
