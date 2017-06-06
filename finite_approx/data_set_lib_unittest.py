@@ -1,9 +1,5 @@
 #!/usr/bin/python3
 
-# Alarmingly, this fails with python2!
-
-# First unit test-- check CAVI updates
-
 import unittest
 from finite_approx.data_set_lib import DataSet
 import finite_approx.valez_finite_VI_lib as vi

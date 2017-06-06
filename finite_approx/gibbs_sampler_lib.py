@@ -95,9 +95,9 @@ class GibbsSampler(object):
     def sample(self, burnin, num_gibbs_draws):
         self.initialize_sampler()
 
-        print('Sampling.')
+        print('Sampling:')
         bar = progressbar.ProgressBar(max_value=num_gibbs_draws + burnin)
         for n in bar(range(num_gibbs_draws + burnin)):
-            self.draw(keep_draw = n > burnin)
+            self.draw(keep_draw = n >= burnin)
 
         print('Holy cow, done sampling!')
