@@ -6,7 +6,7 @@ from autograd import grad
 from copy import deepcopy
 import progressbar
 
-import finite_approx.valez_finite_VI_lib as vi
+import valez_finite_VI_lib as vi
 
 class GibbsSampler(object):
     def __init__(self, x, k_approx, alpha, sigma_eps, sigma_a):
@@ -101,3 +101,100 @@ class GibbsSampler(object):
             self.draw(keep_draw = n >= burnin)
 
         print('Holy cow, done sampling!')
+
+class CollapsedGibbsSampler(object):
+    def __init__(self, x, k_approx, alpha, sigma_eps, sigma_a):
+        self.x = x
+        self.x_n = x.shape[0]
+        self.x_d = x.shape[1]
+        self.k_approx = k_approx
+        self.alpha = alpha
+        self.sigma_eps = sigma_eps
+        self.sigma_a = sigma_a
+
+        self.initialize_sampler()
+
+    def initialize_sampler(self):
+        # Initial values for draws
+        self.z = np.random.binomial(1, 0.5, [self.x_n, self.k_approx ])
+        self.z = self.z.astype(float)
+
+        self.z_draws = []
+
+    def draw_z(self, keep_draw=False):
+        for n in range(self.x_n):
+
+            for k in range(self.k_approx):
+                #p(z_nk = 1 | Z_{-nk}): equation (6) in Griffiths and Ghahramani
+                p_znk1 = (np.sum(self.z[:, k]) - self.z[n, k] + \
+                                    self.alpha/self.k_approx)\
+                                    /(self.x_n + self.alpha/self.k_approx)
+
+                assert (p_znk1 >= 0) & (p_znk1 <= 1)
+
+                p_znk0 = 1 - p_znk1
+
+                z_tmp = deepcopy(self.z)
+                z_tmp[n,k] = 1
+                [log_likelihood1, _] = \
+                            x_lp_cond_z(self.x, z_tmp, self.sigma_eps, self.sigma_a, self.k_approx)
+
+                z_tmp[n,k] = 0
+                [log_likelihood0, _] = \
+                            x_lp_cond_z(self.x, z_tmp, self.sigma_eps, self.sigma_a, self.k_approx)
+
+                log_p1 = log_likelihood1 + np.log(p_znk1) \
+                    - sp.misc.logsumexp([log_likelihood1 + np.log(p_znk1),\
+                        log_likelihood0 + np.log(p_znk0)])
+
+                assert (np.exp(log_p1) >= 0) & (np.exp(log_p1) <= 1)
+
+                self.z[n,k] = np.random.binomial(1, np.exp(log_p1))
+
+        if keep_draw:
+            self.z_draws.append(self.z)
+
+    def sample(self, burnin, num_gibbs_draws):
+
+        print('Sampling:')
+        bar = progressbar.ProgressBar(max_value=num_gibbs_draws + burnin)
+        for n in bar(range(num_gibbs_draws + burnin)):
+            self.draw_z(keep_draw = n >= burnin)
+
+        print('Holy cow, done sampling!')
+
+
+def x_lp_cond_z(X, Z, sigma_eps, sigma_A, K_approx):
+# likelihood p(X|Z)-- equation (8) in Griffiths and Ghahramani
+# http://mlg.eng.cam.ac.uk/zoubin/papers/ibp-nips05.pdf
+
+    assert np.shape(X)[0] == np.shape(Z)[0]
+
+    D = np.shape(X)[1]
+    N = np.shape(X)[0]
+    K = np.shape(Z)[1]
+
+    var = np.dot(Z.T, Z) + sigma_eps/sigma_A * np.eye(K_approx)
+
+    const = np.linalg.det(var)**(D/2)
+
+    #const = (2*np.pi)**(N*D/2) * sigma_eps**((N-K)*D/2) * sigma_A**(K*D/2) * \
+    #    np.linalg.det(var)**(D/2)
+
+    mean_A = np.dot(np.linalg.solve(var, Z.T), X)
+
+    log_likelihood = -1/(2*sigma_eps) * \
+            np.trace(np.dot(X.T, X - np.dot(Z, mean_A)) )
+
+    return log_likelihood - np.log(const), mean_A
+
+"""def compute_mean_a(X, Z, sigma_eps, sigma_A, K_approx, inv_Mk, k, truth = False):
+    if truth: # compute true inverse
+        M = np.linalg.inv(np.dot(Z.T, Z) + sigma_eps/sigma_A * np.eye(K_approx))
+    else:
+        Mk =
+
+        mean_A = np.dot(np.linalg.solve(var, Z.T), X)
+
+    return(mean_A)
+"""
