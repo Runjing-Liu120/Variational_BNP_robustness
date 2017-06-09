@@ -1,0 +1,48 @@
+Pi_computed = tau[:,0]/(tau[:,0] + tau[:,1])
+round_nu = np.round(nu*(nu>=0.9) + nu*(nu<=0.1)) + nu*(nu>=0.1)*(nu<=0.9)
+print('Z (unpermuted): \n', Z[0:10])
+
+# Find the minimizing permutation.
+accuracy_mat = [[ np.sum(np.abs(Z[:, i] - nu[:, j]))/Num_samples for i in range(K_inf) ]
+                  for j in range(K_inf) ]
+perm_tmp = np.argmin(accuracy_mat, 1)
+
+# check that we have a true permuation
+if len(perm_tmp) == len(set(perm_tmp)):
+    perm = perm_tmp
+else:
+    print('** procedure did not give a true permutation')
+    perm = [0,1,2]
+
+print('permutation: ', perm)
+
+# print Z (permuted) and nu
+print('Z (permuted) \n', Z[0:10, perm])
+print('round_nu \n', round_nu[0:10,:])
+
+print('l1 error (after permutation): ', \
+    [ np.sum(np.abs(Z[:, perm[i]] - nu[:, i]))/Num_samples for i in range(K_inf) ])
+
+print('\n')
+print('true A (permuted): \n', A[perm, :])
+print('phi_mu: \n', phi_mu.transpose())
+
+print('\n')
+print('true Pi (permuted): ', Pi)
+print('computed Pi: ', Pi_computed)
+plt.clf()
+plt.plot(elbo)
+plt.xlabel('iteration')
+plt.ylabel('elbo')
+plt.show()
+
+
+pred_x = np.dot(nu, phi_mu.transpose())
+col = 1
+plt.clf()
+plt.plot(pred_x[:, col], X[:, col], 'ko')
+
+diag = np.linspace(np.min(pred_x[:,col]),np.max(pred_x[:,col]))
+plt.plot(diag,diag)
+
+plt.show()
