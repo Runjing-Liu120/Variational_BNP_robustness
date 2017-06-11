@@ -6,7 +6,9 @@ from autograd import grad
 from copy import deepcopy
 import progressbar
 
-import valez_finite_VI_lib as vi
+import matplotlib.pyplot as plt
+
+import finite_approx.valez_finite_VI_lib as vi
 
 class GibbsSampler(object):
     def __init__(self, x, k_approx, alpha, sigma_eps, sigma_a):
@@ -122,34 +124,60 @@ class CollapsedGibbsSampler(object):
         self.z_draws = []
 
     def draw_z(self, keep_draw=False):
+
+        # compute the inverse to get started
+        # after this, inverses are computed via rank 1 updates
+        var = np.dot(self.z.T, self.z)\
+                + self.sigma_eps/self.sigma_a * np.eye(self.k_approx)
+        var_inv = np.linalg.inv(var)
+
+        const = np.linalg.det(var)**(self.x_d/2)
+        mean_A = np.dot(np.linalg.solve(var, self.z.T), self.x)
+        log_lh_X_stay = -1/(2*self.sigma_eps) * \
+                np.trace(np.dot(self.x.T, self.x - np.dot(self.z, mean_A)) )
+
         for n in range(self.x_n):
-
             for k in range(self.k_approx):
-                #p(z_nk = 1 | Z_{-nk}): equation (6) in Griffiths and Ghahramani
-                p_znk1 = (np.sum(self.z[:, k]) - self.z[n, k] + \
-                                    self.alpha/self.k_approx)\
-                                    /(self.x_n + self.alpha/self.k_approx)
+                # first, compute p(z_nk = 1 | Z_{-nk})
+                # This is equation (6) in Griffiths and Ghahramani
+                # http://mlg.eng.cam.ac.uk/zoubin/papers/ibp-nips05.pdf
+                p_z_nk1_cond_Z = (np.sum(self.z[:, k]) - self.z[n, k] + \
+                                self.alpha/self.k_approx)\
+                                /(self.x_n + self.alpha/self.k_approx)
+                assert (p_z_nk1_cond_Z >= 0) & (p_z_nk1_cond_Z <= 1)
 
-                assert (p_znk1 >= 0) & (p_znk1 <= 1)
+                if self.z[n,k] == 1:
+                    p_znk_cond_z_stay = p_z_nk1_cond_Z
+                    p_znk_cond_z_update = 1 - p_z_nk1_cond_Z
+                else:
+                    p_znk_cond_z_update = p_z_nk1_cond_Z
+                    p_znk_cond_z_stay = 1 - p_z_nk1_cond_Z
 
-                p_znk0 = 1 - p_znk1
+                # next compute p(X|Z_new)
+                # equation (8) in Griffiths and Ghahramani
+                [log_lh_X_update, var_inv_update] = update_x_lp_cond_z(\
+                    self.x, self.z, var_inv, self.sigma_eps, self.sigma_a, \
+                    self.k_approx, n, k)
 
-                z_tmp = deepcopy(self.z)
-                z_tmp[n,k] = 1
-                [log_likelihood1, _] = \
-                            x_lp_cond_z(self.x, z_tmp, self.sigma_eps, self.sigma_a, self.k_approx)
 
-                z_tmp[n,k] = 0
-                [log_likelihood0, _] = \
-                            x_lp_cond_z(self.x, z_tmp, self.sigma_eps, self.sigma_a, self.k_approx)
+                log_p_zn_update = log_lh_X_update + np.log(p_znk_cond_z_update) \
+                    - sp.misc.logsumexp([log_lh_X_update + np.log(p_znk_cond_z_update),\
+                        log_lh_X_stay+ np.log(p_znk_cond_z_stay)])
 
-                log_p1 = log_likelihood1 + np.log(p_znk1) \
-                    - sp.misc.logsumexp([log_likelihood1 + np.log(p_znk1),\
-                        log_likelihood0 + np.log(p_znk0)])
+                assert (np.exp(log_p_zn_update) >= 0) & (np.exp(log_p_zn_update) <= 1)
 
-                assert (np.exp(log_p1) >= 0) & (np.exp(log_p1) <= 1)
+                choice = np.random.binomial(1, np.exp(log_p_zn_update))
 
-                self.z[n,k] = np.random.binomial(1, np.exp(log_p1))
+                # update Z and prep log likelihood for next round:
+                if choice == 1: # flip Z_nk
+                    log_lh_X_stay = deepcopy(log_lh_X_update)
+                    var_inv = deepcopy(var_inv_update)
+                    self.z[n,k] = 1 - self.z[n,k]
+                else:
+                    #log_lh_X_stay = deepcopy(log_lh_X_stay)
+                    #var_inv = deepcopy(var_inv)
+                    #self.z[n,k] = self.z[n,k]
+                    pass
 
         if keep_draw:
             self.z_draws.append(self.z)
@@ -161,40 +189,128 @@ class CollapsedGibbsSampler(object):
         for n in bar(range(num_gibbs_draws + burnin)):
             self.draw_z(keep_draw = n >= burnin)
 
-        print('Holy cow, done sampling!')
+        print('Done sampling :)')
 
 
-def x_lp_cond_z(X, Z, sigma_eps, sigma_A, K_approx):
+def update_x_lp_cond_z(X, Z, Var_inv, sigma_eps, sigma_A, K_approx, n,k):
 # likelihood p(X|Z)-- equation (8) in Griffiths and Ghahramani
 # http://mlg.eng.cam.ac.uk/zoubin/papers/ibp-nips05.pdf
-
-    assert np.shape(X)[0] == np.shape(Z)[0]
+# outputs the likelihood at Z  when Z has component n,k flipped
+# Var_inv refers to inv(Z^T * Z + sigma_eps/sigma_A I), the previous inverse
 
     D = np.shape(X)[1]
     N = np.shape(X)[0]
     K = np.shape(Z)[1]
 
-    var = np.dot(Z.T, Z) + sigma_eps/sigma_A * np.eye(K_approx)
+    assert np.shape(X)[0] == np.shape(Z)[0]
 
-    const = np.linalg.det(var)**(D/2)
+    Z_update = deepcopy(Z)
+    Z_update[n,k] = 1 - Z[n,k]
 
-    #const = (2*np.pi)**(N*D/2) * sigma_eps**((N-K)*D/2) * sigma_A**(K*D/2) * \
-    #    np.linalg.det(var)**(D/2)
+    inv_var_flip = update_inv_var(Z, Var_inv, sigma_eps, sigma_A, n, k)
 
-    mean_A = np.dot(np.linalg.solve(var, Z.T), X)
+    mean_A = np.dot(np.dot(inv_var_flip, Z_update.T), X)
 
     log_likelihood = -1/(2*sigma_eps) * \
-            np.trace(np.dot(X.T, X - np.dot(Z, mean_A)) )
+            np.trace(np.dot(X.T, X - np.dot(Z_update, mean_A)) )
 
-    return log_likelihood - np.log(const), mean_A
+    const = np.linalg.det(inv_var_flip)**(-D/2)
 
-"""def compute_mean_a(X, Z, sigma_eps, sigma_A, K_approx, inv_Mk, k, truth = False):
-    if truth: # compute true inverse
-        M = np.linalg.inv(np.dot(Z.T, Z) + sigma_eps/sigma_A * np.eye(K_approx))
+    return log_likelihood - np.log(const), inv_var_flip
+
+def update_inv_var(Z, Var_inv, sigma_eps, sigma_A, n, k):
+
+    K = np.shape(Z)[1]
+
+    Var = np.dot(Z.T, Z) + sigma_eps/sigma_A * np.eye(K)
+
+    Z_flip_nk = deepcopy(Z)
+    Z_flip_nk[n,k] = 1 - Z[n,k]
+
+    var_flip = np.dot(Z_flip_nk.T, Z_flip_nk) + sigma_eps/sigma_A * np.eye(K)
+
+    # set up pieces to compute inverse of var_flip
+    u1 = Z_flip_nk[n,:]
+    v1 = np.zeros(K)
+    v1[k] = Z_flip_nk[n,k] - Z[n,k]
+    assert len(u1) == len(v1)
+
+    u2 = Z[n,:]
+    v2 = deepcopy(v1)
+    assert len(u2) == len(v2)
+
+    # some intermediate quantities: inv1 = inv(var + u1 * v1^T)
+    outer1 = np.outer(u1, v1)
+    assert np.shape(outer1)[0] == K
+    assert np.shape(outer1)[1] == K
+    denom = 1 + np.dot(np.dot(v1, Var_inv), u1)
+    inv1 = Var_inv - np.dot(np.dot(Var_inv, outer1), Var_inv) / denom
+
+
+    #print(inv1)
+    #print(np.linalg.inv(Var + outer1))
+    # assert np.allclose(inv1, np.linalg.inv(Var + outer1))
+
+    # compute inverse of var_flip
+    outer2 = np.outer(v2, u2)
+    assert np.shape(outer2)[0] == K
+    assert np.shape(outer2)[1] == K
+    denom2 = 1 + np.dot(np.dot(u2, inv1), v2)
+    inv_var_flip = inv1 - np.dot(np.dot(inv1, outer2), inv1) / denom2
+
+    #print(var_flip)
+    #print(np.dot(Z.T, Z) + sigma_eps/sigma_A * np.eye(K) + outer1 + outer2)
+    assert np.allclose(var_flip, Var + outer1 + outer2)
+
+    #print(inv_var_flip)
+    #print(np.linalg.inv(var_flip))
+    return(inv_var_flip)
+
+def display_results_Gibbs(X, Z, Z_Gibbs, mean_A, A, manual_perm = None):
+
+    D = np.shape(X)[1]
+    N = np.shape(X)[0]
+    K = np.shape(Z_Gibbs)[1]
+
+    print('Z (unpermuted): \n', Z[0:10])
+
+    # Find the minimizing permutation.
+    accuracy_mat = [[ np.sum(np.abs(Z[:, i] - Z_Gibbs[:, j]))/N for i in range(K) ]
+                      for j in range(K) ]
+    perm_tmp = np.argmin(accuracy_mat, 1)
+
+    # check that we have a true permuation
+    if len(perm_tmp) == len(set(perm_tmp)):
+        perm = perm_tmp
     else:
-        Mk =
+        print('** procedure did not give a true permutation')
+        if manual_perm == None:
+            perm = np.arange(K)
+        else:
+            perm = manual_perm
 
-        mean_A = np.dot(np.linalg.solve(var, Z.T), X)
+    print('permutation: ', perm)
 
-    return(mean_A)
-"""
+    # print Z (permuted) and nu
+    print('Z (permuted) \n', Z[0:10, perm])
+    print('round_nu \n', Z_Gibbs[0:10,:])
+
+    print('l1 error (after permutation): ', \
+        [ np.sum(np.abs(Z[:, perm[i]] - Z_Gibbs[:, i]))/N for i in range(K) ])
+
+    # examine phi_mu
+    print('\n')
+    print('true A (permuted): \n', A[perm, :])
+    print('poster mean A: \n', mean_A)
+
+    # plot posterior predictive
+    pred_x = np.dot(Z_Gibbs, mean_A)
+    for col in range(D):
+        plt.clf()
+        plt.plot(pred_x[:, col], X[:, col], 'ko')
+        diag = np.linspace(np.min(pred_x[:,col]),np.max(pred_x[:,col]))
+        plt.plot(diag,diag)
+        plt.title('Posterior predictive, column' + str(col))
+        plt.xlabel('predicted X')
+        plt.ylabel('true X')
+        plt.show()
