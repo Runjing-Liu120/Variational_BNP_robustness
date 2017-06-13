@@ -40,23 +40,23 @@ class TestGibbsSampler(unittest.TestCase):
 class TestCollapsedGIbbsSampler(unittest.TestCase):
     def test_rank_1_update(self):
         sigma_eps = 0.2
-        sigma_A = 0.3
-        Z = np.random.binomial(1, 0.5, (5,3))
-        K = np.shape(Z)[1]
-        N = np.shape(Z)[0]
+        sigma_a = 0.3
+        z = np.random.binomial(1, 0.5, (5,3))
+        k_approx = np.shape(z)[1]
+        x_n = np.shape(z)[0]
 
-        for n in range(N):
-            for k in range(K):
-                Z_flip = deepcopy(Z)
-                Z_flip[n,k] = 1 - Z[n,k]
+        for n in range(x_n):
+            for k in range(k_approx):
+                z_flip = deepcopy(z)
+                z_flip[n,k] = 1 - z[n,k]
 
-                var_inv = np.linalg.inv(np.dot(Z.T, Z) \
-                        + sigma_eps/sigma_A * np.eye(K))
-                var_flip = np.dot(Z_flip.T, Z_flip) \
-                        + sigma_eps/sigma_A * np.eye(K)
+                var_inv = np.linalg.inv(np.dot(z.T, z) \
+                        + sigma_eps/sigma_a * np.eye(k_approx))
+                var_flip = np.dot(z_flip.T, z_flip) \
+                        + sigma_eps/sigma_a * np.eye(k_approx)
 
-                inv_var_flip \
-                    = update_inv_var(Z, var_inv, sigma_eps, sigma_A, n, k)
+                inv_var_flip = update_inv_var(np.dot(z_flip.T,z_flip), \
+                    z_flip, var_inv, sigma_eps, sigma_a, n, k)
 
                 self.assertTrue(np.allclose(inv_var_flip, np.linalg.inv(var_flip)))
 
