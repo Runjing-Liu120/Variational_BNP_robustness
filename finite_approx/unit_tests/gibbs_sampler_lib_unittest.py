@@ -1,7 +1,8 @@
 #!/usr/bin/python3
 
 import unittest
-from finite_approx.gibbs_sampler_lib import GibbsSampler, update_inv_var, flip_z_z2
+from finite_approx.gibbs_sampler_lib import GibbsSampler, update_inv_var, \
+                                            flip_z2, flip_zx
 import finite_approx.valez_finite_VI_lib as vi
 from copy import deepcopy
 import numpy as np
@@ -38,10 +39,12 @@ class TestGibbsSampler(unittest.TestCase):
         self.assertEqual(len(gibbs_sampler.z_draws), n_draws)
 
 class TestCollapsedGIbbsSampler(unittest.TestCase):
+
     def test_rank_1_update(self):
         sigma_eps = 0.2
         sigma_a = 0.3
         z = np.random.binomial(1, 0.5, (5,3))
+        x = np.random.normal(0,1,(5,2))
         k_approx = np.shape(z)[1]
         x_n = np.shape(z)[0]
 
@@ -62,9 +65,14 @@ class TestCollapsedGIbbsSampler(unittest.TestCase):
 
 
                 test_z2 = np.dot(z.T, z)
-                flip_z_z2(z, test_z2, n, k)
+                flip_z2(z_flip, test_z2, n, k)
                 # checking rank-1 update of Z.T * Z
-                assert(np.allclose(test_z2,np.dot(z_flip.T, z_flip)))
+                assert(np.allclose(test_z2, np.dot(z_flip.T, z_flip)))
+
+                test_zx = np.dot(z.T, x)
+                flip_zx(z_flip, x, test_zx, n, k)
+                assert(np.allclose(test_zx, np.dot(z_flip.T, x)))
+
 
 
 if __name__ == '__main__':
