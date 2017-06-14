@@ -116,17 +116,19 @@ class CollapsedGibbsSampler(object):
         self.sigma_a = sigma_a
 
         self.initialize_sampler()
-        self.lh_quantities()
 
     def initialize_sampler(self):
         # Initial values for draws
         self.z = np.random.binomial(1, 0.5, [self.x_n, self.k_approx ])
         self.z = self.z.astype(float)
         self.z2 = np.dot(self.z.T, self.z)
+        self.lh_quantities()
 
         self.z_draws = []
 
     def lh_quantities(self): # intermediate quantities to compute likelihoods
+        # should only call this once to initialize,
+        # since it will compute the matrix inverse
         self.var = np.dot(self.z.T, self.z)\
                 + self.sigma_eps/self.sigma_a * np.eye(self.k_approx)
         self.var_inv = np.linalg.inv(self.var)
@@ -135,7 +137,7 @@ class CollapsedGibbsSampler(object):
         mean_a = np.dot(np.linalg.solve(self.var, self.z.T), self.x)
         self.log_lh_X = -1/(2*self.sigma_eps) * \
                 np.trace(np.dot(self.x.T, self.x - np.dot(self.z, mean_a)) )\
-                - (self.x_d/2) * logconst
+                - (self.x_d/2.0) * logconst
 
     def draw_z(self, keep_draw=False):
         for n in range(self.x_n):
@@ -158,10 +160,11 @@ class CollapsedGibbsSampler(object):
                 # next compute p(X|Z_new)
                 # equation (8) in Griffiths and Ghahramani
 
-                # flip z[n,k]
-                self.z[n,k] = 1 - self.z[n,k]
+                # flip z[n,k], update z.T * z (efficiently)
+                flip_z_z2(self.z, self.z2, n, k)
+
                 [log_lh_X_update, var_inv_update] = update_x_lp_cond_z(\
-                    self.x, self.x2, self.z2, self.z, self.var_inv, self.sigma_eps, \
+                    self.x, self.x2, self.z, self.z2, self.var_inv, self.sigma_eps, \
                     self.sigma_a, self.k_approx, n, k)
 
                 log_p_znk_cond_z_update = np.log(p_znk_cond_z_update)
@@ -177,10 +180,9 @@ class CollapsedGibbsSampler(object):
                 if choice == 1: # update the necessary quantities
                     self.log_lh_X = deepcopy(log_lh_X_update)
                     self.var_inv = deepcopy(var_inv_update)
-                    self.z2 = np.dot(self.z.T, self.z)
                 else:
                     # flip back to the orginal value of z[n,k]
-                    self.z[n,k] = 1 - self.z[n,k]
+                    flip_z_z2(self.z, self.z2, n, k)
 
         if keep_draw:
             self.z_draws.append(self.z)
@@ -195,20 +197,21 @@ class CollapsedGibbsSampler(object):
         print('Done sampling :)')
 
 
-def update_x_lp_cond_z(x, x2, z2, z_update, var_inv, sigma_eps, sigma_a, \
+def update_x_lp_cond_z(x, x2, z_update, z_update2, var_inv, sigma_eps, sigma_a, \
                         K_approx, n,k):
-# likelihood p(X|Z)-- equation (8) in Griffiths and Ghahramani
-# http://mlg.eng.cam.ac.uk/zoubin/papers/ibp-nips05.pdf
-# outputs the likelihood at Z  when Z has component n,k flipped
-# var_inv refers to inv(Z^T * Z + sigma_eps/sigma_a I), the previous inverse
-
+    # likelihood p(X|Z)-- equation (8) in Griffiths and Ghahramani
+    # http://mlg.eng.cam.ac.uk/zoubin/papers/ibp-nips05.pdf
+    # outputs the likelihood at Z  when Z has component n,k flipped
+    # var_inv refers to inv(Z^T * Z + sigma_eps/sigma_a I), the previous inverse
+    # z_update2 is z_update.T * z_update
     x_d = np.shape(x)[1]
     x_n = np.shape(x)[0]
     k_approx = np.shape(z_update)[1]
 
     assert np.shape(x)[0] == np.shape(z_update)[0]
 
-    inv_var_flip = update_inv_var(z2, z_update, var_inv, sigma_eps, sigma_a, n, k)
+    inv_var_flip = \
+        update_inv_var(z_update, z_update2, var_inv, sigma_eps, sigma_a, n, k)
 
     mean_a = np.dot(np.dot(inv_var_flip, z_update.T), x)
 
@@ -219,17 +222,16 @@ def update_x_lp_cond_z(x, x2, z2, z_update, var_inv, sigma_eps, sigma_a, \
 
     return log_likelihood - (-x_d/2) * logconst, inv_var_flip
 
-def update_inv_var(z2, z_update, var_inv, sigma_eps, sigma_a, n, k):
+def update_inv_var(z_update, z_update2, var_inv, sigma_eps, sigma_a, n, k):
     # compute the inverse of Z^T * Z + sigma_eps/sigma_a * I when Z has
     # element n,k flipped.
     # var_inv refers to the previous computation, before Z had its
     # (n,k) component flipped
-    # z2 refers to Z^T * Z
+    # z_update2 is z_update.T * z_update
 
-    k_approx = np.shape(z2)[0]
+    k_approx = np.shape(z_update)[1]
 
-    var = z2 + sigma_eps/sigma_a * np.eye(k_approx)
-    var_flip = np.dot(z_update.T, z_update) + sigma_eps/sigma_a * np.eye(k_approx)
+    var_flip = z_update2 + sigma_eps/sigma_a * np.eye(k_approx)
 
     # set up pieces to compute inverse of var_flip
     # u1 = deepcopy(z[n,:])
@@ -246,7 +248,9 @@ def update_inv_var(z2, z_update, var_inv, sigma_eps, sigma_a, n, k):
     assert np.shape(outer1)[0] == k_approx
     assert np.shape(outer1)[1] == k_approx
     denom = 1 + np.dot(np.dot(v1, var_inv), z_update[n,:])
-    inv1 = var_inv - np.dot(np.dot(var_inv, outer1), var_inv) / denom
+    #inv1 = var_inv - np.dot(np.dot(var_inv, outer1), var_inv) / denom
+    inv1 = var_inv - np.outer(np.dot(var_inv, z_update[n,:]),\
+                                np.dot(v1.T, var_inv)) / denom
 
     # print(inv1)
     # print(np.linalg.inv(Var + outer1))
@@ -257,13 +261,22 @@ def update_inv_var(z2, z_update, var_inv, sigma_eps, sigma_a, n, k):
     assert np.shape(outer2)[0] == k_approx
     assert np.shape(outer2)[1] == k_approx
     denom2 = 1 + np.dot(np.dot(u2, inv1), v1)
-    inv_var_flip = inv1 - np.dot(np.dot(inv1, outer2), inv1) / denom2
-
+    #inv_var_flip = inv1 - np.dot(np.dot(inv1, outer2), inv1) / denom2
+    inv_var_flip = inv1 - np.outer(np.dot(inv1, v1), np.dot(u2.T, inv1)) / denom2
     # assert np.allclose(var_flip, var + outer1 + outer2)
 
     # print(inv_var_flip)
     # print(np.linalg.inv(var_flip))
     return(inv_var_flip)
+
+def flip_z_z2(z, z2, n, k):
+    # this will update Z.T * Z when Z has its (n,k)th component flipped
+    tmp = z2[k,k]
+    z2[k,:] = z2[k,:] - (2*z[n,k] - 1) * z[n,:]
+    z2[:,k] = z2[:,k] - (2*z[n,k] - 1) * z[n,:]
+    z2[k,k] = tmp - (2*z[n,k] - 1)
+
+    z[n,k] = 1 - z[n,k]
 
 def display_results_Gibbs(X, Z, Z_Gibbs, mean_a, A, manual_perm = None):
 

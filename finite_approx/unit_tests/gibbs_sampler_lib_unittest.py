@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 import unittest
-from finite_approx.gibbs_sampler_lib import GibbsSampler, update_inv_var
+from finite_approx.gibbs_sampler_lib import GibbsSampler, update_inv_var, flip_z_z2
 import finite_approx.valez_finite_VI_lib as vi
 from copy import deepcopy
 import numpy as np
@@ -55,11 +55,16 @@ class TestCollapsedGIbbsSampler(unittest.TestCase):
                 var_flip = np.dot(z_flip.T, z_flip) \
                         + sigma_eps/sigma_a * np.eye(k_approx)
 
-                inv_var_flip = update_inv_var(np.dot(z_flip.T,z_flip), \
-                    z_flip, var_inv, sigma_eps, sigma_a, n, k)
-
+                inv_var_flip = update_inv_var(z_flip, np.dot(z_flip.T,z_flip), \
+                                    var_inv, sigma_eps, sigma_a, n, k)
+                # checking rank-1 update of inverse
                 self.assertTrue(np.allclose(inv_var_flip, np.linalg.inv(var_flip)))
 
+
+                test_z2 = np.dot(z.T, z)
+                flip_z_z2(z, test_z2, n, k)
+                # checking rank-1 update of Z.T * Z
+                assert(np.allclose(test_z2,np.dot(z_flip.T, z_flip)))
 
 
 if __name__ == '__main__':
