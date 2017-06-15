@@ -55,14 +55,17 @@ class TestCollapsedGIbbsSampler(unittest.TestCase):
 
                 var_inv = np.linalg.inv(np.dot(z.T, z) \
                         + sigma_eps/sigma_a * np.eye(k_approx))
+                logdet_var = -np.log(np.linalg.det(var_inv))
+
                 var_flip = np.dot(z_flip.T, z_flip) \
                         + sigma_eps/sigma_a * np.eye(k_approx)
 
-                inv_var_flip = update_inv_var(z_flip, np.dot(z_flip.T,z_flip), \
-                                    var_inv, sigma_eps, sigma_a, n, k)
+                inv_var_flip, logdet_var_flip = update_inv_var(\
+                                z_flip, var_inv, logdet_var, sigma_eps, sigma_a, n, k)
+
                 # checking rank-1 update of inverse
                 self.assertTrue(np.allclose(inv_var_flip, np.linalg.inv(var_flip)))
-
+                self.assertTrue(np.allclose(logdet_var_flip, -np.log(np.linalg.det(inv_var_flip))))
 
                 test_z2 = np.dot(z.T, z)
                 flip_z2(z_flip, test_z2, n, k)
