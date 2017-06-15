@@ -133,8 +133,9 @@ def log_q_a(a, phi_mu, phi_var):
     assert np.shape(a) == np.shape(phi_mu), 'shape of A and phi_mu do not match'
 
     log_denom = (x_d/2) * np.sum(np.log(2 * np.pi * phi_var))
-    deviation = np.dot(a.T - phi_mu.T, 1 / phi_var)
-    return -0.5 * np.dot(deviation.T, deviation) - log_denom
+    #deviation = np.dot(a.T - phi_mu.T, 1 / phi_var)
+    #return -0.5 * np.dot(deviation.T, deviation) - log_denom
+    return -0.5 * np.sum((a.T - phi_mu.T) ** 2 / phi_var) - log_denom
 
 # bernoulli responsibilities
 def log_q_z(z, nu):
@@ -149,7 +150,7 @@ def log_q_pi(pi, tau):
                     + (tau[:,1] - 1) * np.log(1 - pi))
 
 ####################
-# Prior llikelihoods
+# Prior likelihoods
 def log_p0_a(a, sigma_a):
     prior_mean = np.zeros(np.shape(a))
     prior_var = np.ones(np.shape(a)[0]) * sigma_a
