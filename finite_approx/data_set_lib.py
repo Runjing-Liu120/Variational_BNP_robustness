@@ -7,8 +7,8 @@ from copy import deepcopy
 
 from scipy import optimize
 
-import valez_finite_VI_lib as vi
-import generic_optimization_lib as packing
+import finite_approx.valez_finite_VI_lib as vi
+import finite_approx.generic_optimization_lib as packing
 
 
 class OptimzationTrace(object):
