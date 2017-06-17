@@ -115,6 +115,10 @@ class DataSet(object):
         print('Done with Newton trust region.')
         return tr_opt
 
+    def get_log_q_pi(self, params, pi):
+        tau, phi_mu, phi_var, nu = self.unpack_params(params)
+        return log_q_pi(pi, tau)
+
     def get_variational_log_lh(self, params, a, z, pi):
         tau, phi_mu, phi_var, nu = self.unpack_params(params)
         return log_q_a(a, phi_mu.T, phi_var) + log_q_z(z, nu) + log_q_pi(pi, tau)
@@ -133,8 +137,6 @@ def log_q_a(a, phi_mu, phi_var):
     assert np.shape(a) == np.shape(phi_mu), 'shape of A and phi_mu do not match'
 
     log_denom = (x_d/2) * np.sum(np.log(2 * np.pi * phi_var))
-    #deviation = np.dot(a.T - phi_mu.T, 1 / phi_var)
-    #return -0.5 * np.dot(deviation.T, deviation) - log_denom
     return -0.5 * np.sum((a.T - phi_mu.T) ** 2 / phi_var) - log_denom
 
 # bernoulli responsibilities
