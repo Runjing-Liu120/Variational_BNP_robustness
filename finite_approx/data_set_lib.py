@@ -153,9 +153,7 @@ def log_q_pi(pi, tau):
 
 ####################
 # Prior likelihoods
-def log_p0_a(a, sigma_a):
-    prior_mean = np.zeros(np.shape(a))
-    prior_var = np.ones(np.shape(a)[0]) * sigma_a
+def log_p0_a(a, prior_mean, prior_var):
     return log_q_a(a, prior_mean, prior_var)
 
 # bernoulli responsibilities
