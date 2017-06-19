@@ -114,3 +114,58 @@ class DataSet(object):
 
         print('Done with Newton trust region.')
         return tr_opt
+
+    def get_log_q_pi(self, params, pi):
+        tau, phi_mu, phi_var, nu = self.unpack_params(params)
+        return log_q_pi(pi, tau)
+
+    def get_variational_log_lh(self, params, a, z, pi):
+        tau, phi_mu, phi_var, nu = self.unpack_params(params)
+        return log_q_a(a, phi_mu.T, phi_var) + log_q_z(z, nu) + log_q_pi(pi, tau)
+
+
+###################
+# Variational likelihoods
+
+# normal means
+def log_q_a(a, phi_mu, phi_var):
+    # note the shapes below: phi_mu should be the "correct",
+    # not the transposed shape
+    k_approx = np.shape(phi_mu)[0]
+    x_d = np.shape(phi_mu)[1]
+    assert np.shape(phi_mu)[0] == len(phi_var), 'shape of phi_var and phi_mu do not match'
+    assert np.shape(a) == np.shape(phi_mu), 'shape of A and phi_mu do not match'
+
+    log_denom = (x_d/2) * np.sum(np.log(2 * np.pi * phi_var))
+    return -0.5 * np.sum((a.T - phi_mu.T) ** 2 / phi_var) - log_denom
+
+# bernoulli responsibilities
+def log_q_z(z, nu):
+    return np.sum(np.log(nu**z) + np.log((1 - nu)**(1-z)))
+
+# pi stick lengths
+def log_q_pi(pi, tau):
+    log_beta = sp.special.gammaln(tau[:,0]) + sp.special.gammaln(tau[:,1]) \
+                    - sp.special.gammaln(tau[:,0] + tau[:,1])
+
+    return np.sum(-log_beta + (tau[:,0] - 1) * np.log(pi) \
+                    + (tau[:,1] - 1) * np.log(1 - pi))
+
+####################
+# Prior likelihoods
+def log_p0_a(a, prior_mean, prior_var):
+    return log_q_a(a, prior_mean, prior_var)
+
+# bernoulli responsibilities
+def log_p0_z(z, pi):
+    nu = np.tile(pi, (np.shape(z)[0], 1))
+    return log_q_z(z, nu)
+
+# pi stick lengths
+def log_p0_pi(pi, alpha, k_approx):
+    tau = np.array([np.full(len(pi), 1), np.full(len(pi), alpha/k_approx)]).T
+    return log_q_pi(pi, tau)
+
+def log_p0_all(a, z, pi, alpha, k_approx, sigma_a):
+    return log_p0_a(a, sigma_a) + log_p0_z(z, pi) \
+            + log_p0_pi(pi, alpha, k_approx)

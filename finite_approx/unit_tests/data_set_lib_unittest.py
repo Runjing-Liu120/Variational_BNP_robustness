@@ -1,12 +1,12 @@
 #!/usr/bin/python3
 
 import unittest
-from finite_approx.data_set_lib import DataSet
+from finite_approx.data_set_lib import DataSet, log_q_a, log_q_z, log_q_pi
 import finite_approx.valez_finite_VI_lib as vi
 import finite_approx.generic_optimization_lib as packing
 from copy import deepcopy
 import numpy as np
-
+import scipy as sp
 
 class TestDataSet(unittest.TestCase):
     def assert_allclose(self, x, y, tol=1e-12):
@@ -54,6 +54,34 @@ class TestDataSet(unittest.TestCase):
         data_set.run_newton_tr(params_init, maxiter=2)
         data_set.get_prediction(params_init)
 
+class TestVariationalLh(unittest.TestCase):
+    def test_normal_lh(self):
+        k = 3
+        d = 2
+        a = np.random.normal(0,1,(k,d))
+        phi_mu = np.random.normal(0,1,(k,d))
+        phi_var = np.random.uniform(0,1,size = k)
+
+        true_norm_pdf = 0
+        for i in range(k):
+            true_norm_pdf += sp.stats.multivariate_normal.logpdf\
+                    (a[i,:], mean = phi_mu[i,:], cov = phi_var[i] * np.identity(d))
+        test_norm_pdf = log_q_a(a, phi_mu, phi_var)
+
+        self.assertTrue( np.abs(true_norm_pdf - test_norm_pdf) <= 10**(-8))
+
+    def test_beta_lh(self):
+        k = 3
+        pi = np.random.uniform(0,1,size = k)
+        tau = np.random.uniform(0,10, size = (k, 2))
+
+        true_beta_pdf = 0
+        for i in range(k):
+            true_beta_pdf += sp.stats.beta.logpdf(pi[i], tau[i,0], tau[i,1])
+
+        test_beta_pdf = log_q_pi(pi, tau)
+
+        self.assertTrue( np.abs(true_beta_pdf - test_beta_pdf) <= 10**(-8))
 
 if __name__ == '__main__':
     unittest.main()
