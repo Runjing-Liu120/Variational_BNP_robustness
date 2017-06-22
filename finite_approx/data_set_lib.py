@@ -169,3 +169,5 @@ def log_p0_pi(pi, alpha, k_approx):
 def log_p0_all(a, z, pi, alpha, k_approx, sigma_a):
     return log_p0_a(a, sigma_a) + log_p0_z(z, pi) \
             + log_p0_pi(pi, alpha, k_approx)
+
+# meaningless change to test something in git.
