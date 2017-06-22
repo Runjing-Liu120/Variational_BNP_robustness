@@ -38,7 +38,8 @@ class DataSet(object):
         self.data_shape = {'D': x.shape[1], 'N': x.shape[0] , 'K':k_approx}
         self.sigmas = {'eps': sigma_eps, 'A': sigma_a}
 
-        self.hyper_params = pack_hyperparameters(alpha, sigma_a, sigma_eps)
+        self.hyper_params = packing.pack_hyperparameters\
+                        (self.alpha, self.sigmas['A'], self.sigmas['eps'])
 
         self.get_kl_grad =  grad(
             lambda params: self.wrapped_kl(params, tracing=False))
@@ -134,24 +135,25 @@ class DataSet(object):
     def set_jacobians(self, params, hyper_params):
         self.moment_jac_set = self.moments_jac(params)
         self.kl_hess_set = self.get_kl_hessian(params)
-        self.par_hp_hess_set = get_kl_sens_hess(self.params, self.hyper_params)
+        self.par_hp_hess_set = self.get_kl_sens_hess(params, self.hyper_params)
         self.kl_hess_inv_set = np.linalg.inv(self.kl_hess_set)
 
-    def local_prior_sensitivty(self):
+    def local_prior_sensitivity(self):
         try:
             sensitivity_operator = \
                         -1 * np.dot(self.kl_hess_inv_set, self.par_hp_hess_set.T)
-            print('good')
             return np.matmul(self.moment_jac_set, sensitivity_operator)
-        except AttributeError:
-            #try:
-            print('haha')
-            self.set_jacobians(self, self.tr_opt, self.hyper_params)
-            sensitivity_operator = \
-                -1 * np.dot(self.kl_hess_inv_set, self.par_hp_hess_set.T)
-            return np.matmul(self.moment_jac_set, sensitivity_operator)
-            #except AttributeError:
-            #    print('need to find optimal parameters first!')
+        except AttributeError: # if the jacobians are not set yet, set them
+            if hasattr(self, 'tr_opt'):
+                self.set_jacobians(self.tr_opt.x, self.hyper_params)
+                sensitivity_operator = \
+                            -1 * np.dot(self.kl_hess_inv_set, self.par_hp_hess_set.T)
+                return np.matmul(self.moment_jac_set, sensitivity_operator)
+            else:
+                print('Please run newton trust region to find an optima first')
+
+
+
 
     def get_log_q_pi(self, params, pi):
         tau, phi_mu, phi_var, nu = self.unpack_params(params)
