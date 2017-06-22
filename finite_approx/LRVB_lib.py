@@ -152,9 +152,6 @@ class DataSet(object):
             else:
                 print('Please run newton trust region to find an optima first')
 
-
-
-
     def get_log_q_pi(self, params, pi):
         tau, phi_mu, phi_var, nu = self.unpack_params(params)
         return log_q_pi(pi, tau)
