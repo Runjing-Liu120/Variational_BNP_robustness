@@ -265,4 +265,4 @@ def generate_data(num_samples, D, k_inf, sigma_a, sigma_eps, alpha):
     # the observed data
     X = np.matmul(Z, A) + epsilon
 
-    return pi, Z, mu, A, X
+    return pi, Z, A, X
