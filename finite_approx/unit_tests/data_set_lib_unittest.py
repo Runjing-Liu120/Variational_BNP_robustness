@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 import unittest
-from finite_approx.data_set_lib import DataSet, log_q_a, log_q_z, log_q_pi
+from finite_approx.LRVB_lib import DataSet, log_q_a, log_q_z, log_q_pi
 import finite_approx.valez_finite_VI_lib as vi
 import finite_approx.generic_optimization_lib as packing
 from copy import deepcopy
