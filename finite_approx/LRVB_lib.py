@@ -150,15 +150,37 @@ class DataSet(object):
                             -1 * np.dot(self.kl_hess_inv_set, self.par_hp_hess_set.T)
                 return np.matmul(self.moment_jac_set, sensitivity_operator)
             else:
-                print('Please run newton trust region to find an optima first')
+                raise ValueError(\
+                    'Please run newton trust region to find an optima first')
 
-    def get_log_q_pi(self, params, pi):
-        tau, phi_mu, phi_var, nu = self.unpack_params(params)
-        return log_q_pi(pi, tau)
+    def influence_function_pi(self, theta, k):
+        if not(hasattr(self, 'moment_jac_set')) or not(hasattr(self, 'kl_hess_inv_set')):
+            # set jacobians if necessary
+            if hasattr(self, 'tr_opt'):
+                self.set_jacobians(self.tr_opt.x, self.hyper_params)
+                print('hi')
+            else:
+                raise ValueError(\
+                    'Please run newton trust region to find an optima first')
 
-    def get_variational_log_lh(self, params, a, z, pi):
+        log_q_pi_k_jac = jacobian(self.get_log_q_pi_k, 0)
+
+        term1 = np.dot(self.moment_jac_set, self.kl_hess_inv_set)
+        term2 = np.exp(self.get_log_q_pi_k(self.tr_opt.x, theta, k) \
+                            - log_p0_pi_k(theta, self.alpha, self.k_approx))
+        term3 = log_q_pi_k_jac(self.tr_opt.x, theta, k)
+
+        return np.dot(term1, term2*term3)
+
+    def get_log_q_pi_k(self, params, pi_k, k):
         tau, phi_mu, phi_var, nu = self.unpack_params(params)
-        return log_q_a(a, phi_mu.T, phi_var) + log_q_z(z, nu) + log_q_pi(pi, tau)
+        return log_q_pi_k(pi_k, tau[k,:])
+
+
+
+    #def get_variational_log_lh(self, params, a, z, pi):
+    #    tau, phi_mu, phi_var, nu = self.unpack_params(params)
+    #    return log_q_a(a, phi_mu.T, phi_var) + log_q_z(z, nu) + log_q_pi(pi, tau)
 
 
 ###################
@@ -199,12 +221,25 @@ def log_p0_z(z, pi):
     return log_q_z(z, nu)
 
 # pi stick lengths
-def log_p0_pi(pi, alpha, k_approx):
-    tau = np.array([np.full(len(pi), 1), np.full(len(pi), alpha/k_approx)]).T
+def log_p0_pi(pi, alpha):
+    tau = np.array([np.full(len(pi), 1), np.full(len(pi), alpha/len(pi))]).T
     return log_q_pi(pi, tau)
 
 def log_p0_all(a, z, pi, alpha, k_approx, sigma_a):
     return log_p0_a(a, sigma_a) + log_p0_z(z, pi) \
             + log_p0_pi(pi, alpha, k_approx)
 
-# meaningless change to test something in git.
+##################
+# Marginal distributions for pi
+# here, pi_k refers to a scalar, not a vector
+# and tau_k is two dimensional, corresponding to the two beta parameters
+def log_q_pi_k(pi_k, tau_k):
+    log_beta = sp.special.gammaln(tau_k[0]) + sp.special.gammaln(tau_k[1]) \
+                    - sp.special.gammaln(tau_k[0] + tau_k[1])
+
+    return np.sum(-log_beta + (tau_k[0] - 1) * np.log(pi_k) \
+                    + (tau_k[1] - 1) * np.log(1 - pi_k))
+
+def log_p0_pi_k(pi_k, alpha, k_approx):
+    tau_k = [1, alpha/k_approx]
+    return log_q_pi_k(pi_k, tau_k)
