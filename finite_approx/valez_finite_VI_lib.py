@@ -169,13 +169,23 @@ def compute_elbo(tau, nu, phi_mu, phi_var, X, sigmas, alpha):
     e_log_pi1, e_log_pi2, phi_moment1, phi_moment2, nu_moment = \
         get_moments(tau, nu, phi_mu, phi_var)
 
+    print(e_log_pi1)
+    print(e_log_pi2)
+    print(phi_moment1)
+    print(phi_moment2)
+    print(nu_moment)
+    print(sigmas['A'])
+    print(sigmas['eps'])
+    print(alpha)
+
     e_log_lik = exp_log_likelihood(
         nu_moment, phi_moment1, phi_moment2,  e_log_pi1, e_log_pi2, \
         sigmas['A'], sigmas['eps'], X, alpha)
 
     D = X.shape[1]
     entropy = nu_entropy(nu) + phi_entropy(phi_var, D) + pi_entropy(tau)
-
+    print(e_log_lik)
+    print(entropy)
     return e_log_lik + entropy
 
 
@@ -266,3 +276,49 @@ def generate_data(num_samples, D, k_inf, sigma_a, sigma_eps, alpha):
     X = np.matmul(Z, A) + epsilon
 
     return pi, Z, A, X
+
+################################
+# rewrite model in LRVB framework
+class IBP_Finite_Model(object):
+    def __init__(self, x, vb_params, hyper_params):
+        self.vb_params = deepcopy(vb_params)
+        self.hyper_params = deepcopy(hyper_params)
+        self.x = x
+        self.x_d = np.shape(x)[1]
+    def elbo(self):
+        # get moments
+        phi_moment1 = self.vb_params['phi'].e()
+        phi_moment2 = self.vb_params['phi'].e2() # check that this is the correct expectation...
+        nu_moment = self.vb_params['nu'].get()
+        e_log_pi1 = self.vb_params['pi'].e_log()[:,0]
+        e_log_pi2 = self.vb_params['pi'].e_log()[:,1]
+        print(e_log_pi1)
+        print(e_log_pi2)
+        print(phi_moment1.T)
+        print(phi_moment2.T)
+        print(nu_moment)
+
+        # unpack hyper_params
+        alpha = self.hyper_params['alpha'].get()
+        sigma_a = self.hyper_params['var_a'].get()
+        sigma_eps = self.hyper_params['var_eps'].get()
+        print(sigma_a)
+        print(sigma_eps)
+        print(alpha)
+
+        # compute expected log likelihood
+        e_log_lik = exp_log_likelihood(nu_moment, phi_moment1.T, phi_moment2.T, \
+                        e_log_pi1, e_log_pi2, sigma_a, sigma_eps, self.x, alpha)
+        print(e_log_lik)
+        # compute entropy
+        entropy = nu_entropy(nu_moment) \
+                + phi_entropy(1/self.vb_params['phi'].info.get(), self.x_d) \
+                + pi_entropy(self.vb_params['pi'].alpha.get())
+        print(entropy)
+
+        return e_log_lik + entropy
+
+
+    def eval_elbo(self, free_vb_params, free_hyper_params):
+        self.vb_params.set_free(free_vb_par)
+        self.hyper_params(free_hyper_params)
