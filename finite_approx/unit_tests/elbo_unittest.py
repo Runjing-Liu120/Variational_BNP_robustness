@@ -10,8 +10,18 @@ from copy import deepcopy
 import scipy as osp
 from scipy import stats
 
+# load VB libraries
+import sys
+sys.path.append('../LinearResponseVariationalBayes.py')
+
+from VariationalBayes.ParameterDictionary import ModelParamsDict
+from VariationalBayes.DirichletParams import DirichletParamArray
+from VariationalBayes.NormalParams import MVNArray
+from VariationalBayes.Parameters import ArrayParam, ScalarParam
+
 # Set a seed to avoid flaky tests.
-np.random.seed(42)
+np.random.seed(31)
+
 
 # draw data
 num_samples = 10
@@ -29,6 +39,7 @@ k_approx = k_inf
 
 tau = np.full((k_approx, 2), 5.)
 tau[:, 1] *= 2.
+
 
 # Bernoulli parameter for z_nk
 nu =  np.random.uniform(0.01, 0.99, (num_samples, k_approx))
@@ -75,6 +86,8 @@ class TestElboComputation(unittest.TestCase):
         a2_sample_mean = np.mean(a_sample ** 2, 0)
         self.assert_allclose(a_sample_mean, phi_moment1, 40 * tol_scale, 'a')
         self.assert_allclose(a2_sample_mean, phi_moment2, 40 * tol_scale, 'a2')
+        print(phi_moment1)
+
 
     def test_entropy(self):
         # Autograd has not implemented certain entropy functions, so test our own.
@@ -131,7 +144,9 @@ class TestElboComputation(unittest.TestCase):
         self.assertTrue(np.std(ell_by_param - sample_ell_by_param) < \
                         3. * standard_error)
 
-"""## testing the VB library
+###########################
+## testing the VB library
+
 ## define variational parameters
 vb_params = ModelParamsDict(name = 'vb_params')
 # stick lengths
@@ -146,10 +161,10 @@ vb_params.push_param(ArrayParam(name = 'nu', shape = (num_samples, k_inf), \
 vb_params['phi'].set_vector(np.hstack([np.ravel(phi_mu.T), phi_var]))
 vb_params['pi'].set_vector(np.ravel(tau))
 vb_params['nu'].set_vector(np.ravel(nu))
-"""
 
+vb_params2 = deepcopy(vb_params)
 
-"""class TestElboComputation_VB_lib(unittest.TestCase):
+class TestElboComputation_VB_lib(unittest.TestCase):
     def assert_allclose(self, x, y, tol=1e-12, msg=''):
         self.assertTrue(np.allclose(x, y, tol),
                         msg='{}\nx !~ y where\nx = {}\ny = {}\ntol = {}'.format(
@@ -163,42 +178,42 @@ vb_params['nu'].set_vector(np.ravel(nu))
 
         print('1 / sqrt(num test draws) = %0.6f' % tol_scale)
 
-        e_log_pi1, e_log_pi2, phi_moment1, phi_moment2, nu_moment = \
-            vi.get_moments(tau, nu, phi_mu, phi_var)
-
         # pi (tau)
         self.assert_allclose(np.mean(pi_sample, 0),
-                             tau[:,0] / (tau[:,0] + tau[:,1]), 10 * tol_scale)
+                             vb_params['pi'].e()[:,0], 10 * tol_scale)
         log_pi_sample_mean = np.mean(np.log(pi_sample), 0)
         log_1mpi_sample_mean = np.mean(np.log(1 - pi_sample), 0)
-        self.assert_allclose(e_log_pi1, log_pi_sample_mean,  10 * tol_scale)
-        self.assert_allclose(e_log_pi2, log_1mpi_sample_mean,  10 * tol_scale)
+        self.assert_allclose(vb_params['pi'].e_log()[:,0], \
+                            log_pi_sample_mean,  10 * tol_scale)
+        self.assert_allclose(vb_params['pi'].e_log()[:,1], \
+                            log_1mpi_sample_mean,  10 * tol_scale)
+        print('alphpa', vb_params['pi'].alpha.get())
 
         # Z (nu)
         z_sample_mean = np.mean(z_sample, 0)
-        self.assert_allclose(z_sample_mean, nu_moment, 20 * tol_scale, 'z')
+        self.assert_allclose(z_sample_mean, vb_params['nu'].get(), 20 * tol_scale, 'z')
 
         # Mu (phi)
         a_sample_mean = np.mean(a_sample, 0)
-        #a2_sample = np.sum(a_sample ** 2, 1)
-        #a2_sample_mean = np.mean(a2_sample, 0)
+        a2_sample = np.sum(a_sample ** 2, 1)
+        a2_sample_mean = np.mean(a2_sample, 0)
         a2_sample_mean = np.mean(a_sample ** 2, 0)
-        self.assert_allclose(a_sample_mean, phi_moment1, 40 * tol_scale, 'a')
-        self.assert_allclose(a2_sample_mean, phi_moment2, 40 * tol_scale, 'a2')
+        self.assert_allclose(a_sample_mean, vb_params['phi'].e().T, 50 * tol_scale, 'a')
+        self.assert_allclose(a2_sample_mean, vb_params['phi'].e2().T, 50 * tol_scale, 'a2')
 
     def test_entropy(self):
         # Autograd has not implemented certain entropy functions, so test our own.
         self.assert_allclose(
             np.sum(osp.stats.beta.entropy(tau[:, 0], tau[:, 1])),
-            vi.pi_entropy(tau), tol=1e-12)
+            vi.pi_entropy(vb_params['pi'].alpha.get()), tol=1e-12)
 
         self.assert_allclose(
             np.sum(osp.stats.norm.entropy(phi_mu, np.sqrt(phi_var_expanded))),
-            vi.phi_entropy(phi_var, x_dim), tol=1e-12)
+            vi.phi_entropy(1/vb_params['phi'].info.get(), x_dim), tol=1e-12)
 
         self.assert_allclose(
             np.sum(osp.stats.bernoulli.entropy(nu)),
-            vi.nu_entropy(nu), tol=1e-12)
+            vi.nu_entropy(vb_params['nu'].get()), tol=1e-12)
 
     def test_e_log_lik(self):
         n_test_samples = 10000
@@ -215,6 +230,11 @@ vb_params['nu'].set_vector(np.ravel(nu))
                 vi.initialize_parameters(num_samples, x_dim, k_approx)
             phi_var_expanded = np.array([ phi_var for d in range(x_dim)])
 
+            # set vb parameters
+            vb_params2['phi'].set_vector(np.hstack([np.ravel(phi_mu.T), phi_var]))
+            vb_params2['pi'].set_vector(np.ravel(tau))
+            vb_params2['nu'].set_vector(np.ravel(nu))
+
             z_sample, a_sample, pi_sample = \
                 vi.generate_parameter_draws(nu, phi_mu, phi_var_expanded, \
                                             tau, n_test_samples)
@@ -230,17 +250,21 @@ vb_params['nu'].set_vector(np.ravel(nu))
                 np.max([ standard_error,
                          np.std(sample_e_log_lik) / np.sqrt(n_test_samples) ])
 
-            e_log_pi1, e_log_pi2, phi_moment1, phi_moment2, nu_moment = \
-                vi.get_moments(tau, nu, phi_mu, phi_var)
+            # get moments
+            phi_moment1 = vb_params2['phi'].e()
+            phi_moment2 = vb_params2['phi'].e2() # check that this is the correct expectation...
+            nu_moment = vb_params2['nu'].get()
+            e_log_pi1 = vb_params2['pi'].e_log()[:,0]
+            e_log_pi2 = vb_params2['pi'].e_log()[:,1]
 
             ell_by_param[i] = vi.exp_log_likelihood(
-                nu_moment, phi_moment1, phi_moment2, e_log_pi1, e_log_pi2,
+                nu_moment, phi_moment1.T, phi_moment2.T, e_log_pi1, e_log_pi2,
                 sigma_a, sigma_eps, x, alpha)
 
         print('Mean log likelihood standard error: %0.5f' % standard_error)
         self.assertTrue(np.std(ell_by_param - sample_ell_by_param) < \
                         3. * standard_error)
-"""
+
 
 if __name__ == '__main__':
     unittest.main()
