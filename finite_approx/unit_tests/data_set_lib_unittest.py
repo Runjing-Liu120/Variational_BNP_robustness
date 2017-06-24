@@ -20,7 +20,7 @@ class TestDataSet(unittest.TestCase):
         sigma_eps = 1.0 ** 2
         k_inf = 4
 
-        pi, Z, mu, A, X = vi.generate_data(
+        pi, Z, A, X = vi.generate_data(
             num_samples, x_dim, k_inf, sigma_a, sigma_eps, alpha)
 
         k_approx = k_inf # variational truncation

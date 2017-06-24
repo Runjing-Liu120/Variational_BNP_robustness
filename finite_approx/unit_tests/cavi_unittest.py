@@ -28,7 +28,7 @@ alpha = 2 # IBP parameter
 sigma_a = 100
 sigma_eps = 1 # variance of noise
 
-Pi, Z, mu, A, X = vi.generate_data(num_samples, D, k_inf, sigma_a, sigma_eps, alpha)
+Pi, Z, A, X = vi.generate_data(num_samples, D, k_inf, sigma_a, sigma_eps, alpha)
 
 Data_shape = {'D':D, 'N': num_samples , 'K':k_approx}
 sigmas = {'eps': sigma_eps, 'A': sigma_a}

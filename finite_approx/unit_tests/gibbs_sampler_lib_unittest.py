@@ -21,7 +21,7 @@ class TestGibbsSampler(unittest.TestCase):
         sigma_a = 3.0 ** 2
         sigma_eps = 0.2 ** 2
         k_approx = 5
-        pi_true, z_true, mu_true, a_true, x =  vi.generate_data(
+        pi_true, z_true, a_true, x =  vi.generate_data(
             num_samples, x_dim, k_approx, sigma_a, sigma_eps, alpha)
 
         # Just test that it runs.

@@ -21,7 +21,7 @@ sigma_a = 1.2
 sigma_eps  = 2
 alpha = 10
 
-pi, Z, mu, A, x = \
+pi, Z, A, x = \
     vi.generate_data(num_samples, x_dim, k_inf, sigma_a, sigma_eps, alpha)
 
 # initialize variational parameters
@@ -37,7 +37,6 @@ nu =  np.random.uniform(0.01, 0.99, (num_samples, k_approx))
 phi_mu = np.random.normal(0, 1, [x_dim, k_approx])
 phi_var = np.ones(k_approx)
 phi_var_expanded = np.array([ phi_var for d in range(x_dim)])
-
 
 
 class TestElboComputation(unittest.TestCase):
@@ -132,7 +131,25 @@ class TestElboComputation(unittest.TestCase):
         self.assertTrue(np.std(ell_by_param - sample_ell_by_param) < \
                         3. * standard_error)
 
-class TestElboComputation_VB_lib(unittest.TestCase):
+"""## testing the VB library
+## define variational parameters
+vb_params = ModelParamsDict(name = 'vb_params')
+# stick lengths
+vb_params.push_param(DirichletParamArray(name='pi', shape=(k_inf, 2)))
+# variational means
+vb_params.push_param(MVNArray(name='phi', shape=(k_inf, x_dim)))
+# responsibilities
+vb_params.push_param(ArrayParam(name = 'nu', shape = (num_samples, k_inf), \
+                        lb = 0.0, ub = 1.0))
+
+# initialize
+vb_params['phi'].set_vector(np.hstack([np.ravel(phi_mu.T), phi_var]))
+vb_params['pi'].set_vector(np.ravel(tau))
+vb_params['nu'].set_vector(np.ravel(nu))
+"""
+
+
+"""class TestElboComputation_VB_lib(unittest.TestCase):
     def assert_allclose(self, x, y, tol=1e-12, msg=''):
         self.assertTrue(np.allclose(x, y, tol),
                         msg='{}\nx !~ y where\nx = {}\ny = {}\ntol = {}'.format(
@@ -223,7 +240,7 @@ class TestElboComputation_VB_lib(unittest.TestCase):
         print('Mean log likelihood standard error: %0.5f' % standard_error)
         self.assertTrue(np.std(ell_by_param - sample_ell_by_param) < \
                         3. * standard_error)
-
+"""
 
 if __name__ == '__main__':
     unittest.main()
