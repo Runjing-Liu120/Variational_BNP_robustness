@@ -22,7 +22,6 @@ from VariationalBayes.Parameters import ArrayParam, ScalarParam
 # Set a seed to avoid flaky tests.
 np.random.seed(31)
 
-
 # draw data
 num_samples = 10
 x_dim = 4
@@ -147,17 +146,8 @@ class TestElboComputation(unittest.TestCase):
 ###########################
 ## testing the VB library
 
-## define variational parameters
-vb_params = ModelParamsDict(name = 'vb_params')
-# stick lengths
-vb_params.push_param(DirichletParamArray(name='pi', shape=(k_inf, 2)))
-# variational means
-vb_params.push_param(MVNArray(name='phi', shape=(k_inf, x_dim)))
-# responsibilities
-vb_params.push_param(ArrayParam(name = 'nu', shape = (num_samples, k_inf), \
-                        lb = 0.0, ub = 1.0))
-
 # initialize
+vb_params = vi.set_vb_model(num_samples, x_dim, k_approx)
 vb_params['phi'].set_vector(np.hstack([np.ravel(phi_mu.T), phi_var]))
 vb_params['pi'].set_vector(np.ravel(tau))
 vb_params['nu'].set_vector(np.ravel(nu))
@@ -178,28 +168,15 @@ class TestElboComputation_VB_lib(unittest.TestCase):
 
         print('1 / sqrt(num test draws) = %0.6f' % tol_scale)
 
-        # pi (tau)
+        e_log_pi1, e_log_pi2, phi_moment1, phi_moment2, nu_moment =\
+                        vi.get_moments_VB(vb_params)
+
         self.assert_allclose(np.mean(pi_sample, 0),
-                             vb_params['pi'].e()[:,0], 10 * tol_scale)
+                             tau[:,0] / (tau[:,0] + tau[:,1]), 10 * tol_scale)
         log_pi_sample_mean = np.mean(np.log(pi_sample), 0)
         log_1mpi_sample_mean = np.mean(np.log(1 - pi_sample), 0)
-        self.assert_allclose(vb_params['pi'].e_log()[:,0], \
-                            log_pi_sample_mean,  10 * tol_scale)
-        self.assert_allclose(vb_params['pi'].e_log()[:,1], \
-                            log_1mpi_sample_mean,  10 * tol_scale)
-        print('alphpa', vb_params['pi'].alpha.get())
-
-        # Z (nu)
-        z_sample_mean = np.mean(z_sample, 0)
-        self.assert_allclose(z_sample_mean, vb_params['nu'].get(), 20 * tol_scale, 'z')
-
-        # Mu (phi)
-        a_sample_mean = np.mean(a_sample, 0)
-        a2_sample = np.sum(a_sample ** 2, 1)
-        a2_sample_mean = np.mean(a2_sample, 0)
-        a2_sample_mean = np.mean(a_sample ** 2, 0)
-        self.assert_allclose(a_sample_mean, vb_params['phi'].e().T, 50 * tol_scale, 'a')
-        self.assert_allclose(a2_sample_mean, vb_params['phi'].e2().T, 50 * tol_scale, 'a2')
+        self.assert_allclose(e_log_pi1, log_pi_sample_mean,  10 * tol_scale)
+        self.assert_allclose(e_log_pi2, log_1mpi_sample_mean,  10 * tol_scale)
 
     def test_entropy(self):
         # Autograd has not implemented certain entropy functions, so test our own.
@@ -251,14 +228,11 @@ class TestElboComputation_VB_lib(unittest.TestCase):
                          np.std(sample_e_log_lik) / np.sqrt(n_test_samples) ])
 
             # get moments
-            phi_moment1 = vb_params2['phi'].e()
-            phi_moment2 = vb_params2['phi'].e2() # check that this is the correct expectation...
-            nu_moment = vb_params2['nu'].get()
-            e_log_pi1 = vb_params2['pi'].e_log()[:,0]
-            e_log_pi2 = vb_params2['pi'].e_log()[:,1]
+            e_log_pi1, e_log_pi2, phi_moment1, phi_moment2, nu_moment =\
+                            vi.get_moments_VB(vb_params2)
 
             ell_by_param[i] = vi.exp_log_likelihood(
-                nu_moment, phi_moment1.T, phi_moment2.T, e_log_pi1, e_log_pi2,
+                nu_moment, phi_moment1, phi_moment2, e_log_pi1, e_log_pi2,
                 sigma_a, sigma_eps, x, alpha)
 
         print('Mean log likelihood standard error: %0.5f' % standard_error)
