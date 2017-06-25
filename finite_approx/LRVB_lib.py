@@ -145,7 +145,7 @@ class DataSet(object):
             return np.matmul(self.moment_jac_set, sensitivity_operator)
         except AttributeError: # if the jacobians are not set yet, set them
             if hasattr(self, 'tr_opt'):
-                self.set_jacobians(self.tr_opt.x, self.hyper_params)
+                self.set_jacobians(self.tr_opt.x)
                 sensitivity_operator = \
                             -1 * np.dot(self.kl_hess_inv_set, self.par_hp_hess_set.T)
                 return np.matmul(self.moment_jac_set, sensitivity_operator)
@@ -167,14 +167,14 @@ class DataSet(object):
 
         term1 = np.dot(self.moment_jac_set, self.kl_hess_inv_set)
         term2 = np.exp(self.get_log_q_pi_k(self.tr_opt.x, theta, k) \
-                            - log_p0_pi_k(theta, self.alpha, self.k_approx))
+                            - log_p0_pi(theta, self.alpha, self.k_approx))
         term3 = log_q_pi_k_jac(self.tr_opt.x, theta, k)
 
         return np.dot(term1, term2*term3)
 
     def get_log_q_pi_k(self, params, pi_k, k):
         tau, phi_mu, phi_var, nu = self.unpack_params(params)
-        return log_q_pi_k(pi_k, tau[k,:])
+        return log_q_pi(pi_k, np.array([tau[k,:]]))
 
 
 
@@ -328,14 +328,15 @@ class DataSetII(object):
 
         term1 = np.dot(self.moment_jac_set, self.kl_hess_inv_set)
         term2 = np.exp(self.get_log_q_pi_k(self.tr_opt.x, theta, k) \
-                            - log_p0_pi_k(theta, self.alpha, self.k_approx))
+                            - log_p0_pi(theta, self.alpha, self.k_approx))
         term3 = log_q_pi_k_jac(self.tr_opt.x, theta, k)
 
         return np.dot(term1, term2*term3)
 
     def get_log_q_pi_k(self, free_vb_params, pi_k, k):
         self.vb_model.set_free(free_vb_params)
-        return log_q_pi_k(pi_k, self.vb_model['pi'].alpha.get()[k,:])
+        tau = self.vb_model['pi'].alpha.get()[k,:]
+        return log_q_pi(pi_k, tau[None, :])
 
 
 ###################
@@ -362,14 +363,16 @@ def log_q_pi(pi, tau):
     log_beta = sp.special.gammaln(tau[:,0]) + sp.special.gammaln(tau[:,1]) \
                     - sp.special.gammaln(tau[:,0] + tau[:,1])
 
-    return np.sum(-log_beta + (tau[:,0] - 1) * np.log(pi) \
-                    + (tau[:,1] - 1) * np.log(1 - pi))
+    return np.sum(-log_beta + (tau[:,0] - 1.0) * np.log(pi) \
+                    + (tau[:,1] - 1) * np.log(1.0 - pi))
 
 
 
 ####################
 # Prior likelihoods
-def log_p0_a(a, prior_mean, prior_var):
+def log_p0_a(a, prior_var):
+    prior_mean = np.zeros(np.shape(a))
+    prior_var = np.full(np.shape(a)[0], prior_var)
     return log_q_a(a, prior_mean, prior_var)
 
 # bernoulli responsibilities
@@ -378,14 +381,17 @@ def log_p0_z(z, pi):
     return log_q_z(z, nu)
 
 # pi stick lengths
-def log_p0_pi(pi, alpha):
-    tau = np.array([np.full(len(pi), 1), np.full(len(pi), alpha/len(pi))]).T
+def log_p0_pi(pi, alpha, k_approx):
+    # tau = np.array([np.full(k_approx, 1), np.full(k_approx, alpha/k_approx)]).T
+    tau = np.array([[1, alpha/k_approx]])
     return log_q_pi(pi, tau)
 
 def log_p0_all(a, z, pi, alpha, k_approx, sigma_a):
     return log_p0_a(a, sigma_a) + log_p0_z(z, pi) \
             + log_p0_pi(pi, alpha, k_approx)
 
+# delete the below: the above should take care of these cases
+# just double check the indices/broadcasting works as desired above
 ##################
 # Marginal distributions for pi
 # here, pi_k refers to a scalar, not a vector
@@ -394,8 +400,8 @@ def log_q_pi_k(pi_k, tau_k):
     log_beta = sp.special.gammaln(tau_k[0]) + sp.special.gammaln(tau_k[1]) \
                     - sp.special.gammaln(tau_k[0] + tau_k[1])
 
-    return np.sum(-log_beta + (tau_k[0] - 1) * np.log(pi_k) \
-                    + (tau_k[1] - 1) * np.log(1 - pi_k))
+    return -log_beta + (tau_k[0] - 1) * np.log(pi_k) \
+                    + (tau_k[1] - 1) * np.log(1 - pi_k)
 
 def log_p0_pi_k(pi_k, alpha, k_approx):
     tau_k = [1, alpha/k_approx]
