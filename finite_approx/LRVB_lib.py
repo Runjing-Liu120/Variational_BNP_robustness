@@ -185,17 +185,18 @@ class DataSet(object):
 
 ##############
 # same as above, but using VB library
-# that is, vb_params and hyper_params are instances of the ModelParamsDict class
+# that is, vb_model and hyper_params are instances of the ModelParamsDict class
 
 class DataSetII(object):
-    def __init__(self, x, vb_params, hyper_params):
-        self.vb_params = deepcopy(vb_params)
+    def __init__(self, x, vb_model, hyper_params):
+        self.vb_model = deepcopy(vb_model)
         self.hyper_params = deepcopy(hyper_params)
         self.x = x
 
         self.alpha = hyper_params['alpha'].get()
         self.sigmas = {'A': hyper_params['var_a'].get(),
                             'eps': hyper_params['var_eps'].get()}
+        self.k_approx = np.shape(vb_model['phi'].e())[0]
 
         self.get_kl_grad =  grad(
             lambda params: self.wrapped_kl(params, tracing=False))
@@ -215,11 +216,11 @@ class DataSetII(object):
 
         self.trace = OptimzationTrace()
 
-    def unpack_params(self, vb_params):
-        phi_mu = vb_params['phi'].mean.get()
-        phi_var = 1 / vb_params['phi'].info.get()
-        nu = vb_params['nu'].get()
-        tau = vb_params['pi'].alpha.get()
+    def unpack_params(self, vb_model):
+        phi_mu = vb_model['phi'].mean.get()
+        phi_var = 1 / vb_model['phi'].info.get()
+        nu = vb_model['nu'].get()
+        tau = vb_model['pi'].alpha.get()
 
         return tau, phi_mu.T, phi_var, nu
 
@@ -228,21 +229,21 @@ class DataSetII(object):
                         self.x, self.alpha, self.sigmas)
 
     def wrapped_kl(self, free_vb_params, tracing=True):
-        self.vb_params.set_free(free_vb_params)
-        elbo = vi.compute_elboII(self.x, self.vb_params, self.hyper_params)
+        self.vb_model.set_free(free_vb_params)
+        elbo = vi.compute_elboII(self.x, self.vb_model, self.hyper_params)
         if tracing:
             self.trace.update(free_vb_params, -1 * elbo)
         return -1 * elbo
 
     def wrapped_kl_hyperparams(self, free_vb_params, free_hyper_params):
-        self.vb_params.set_free(free_vb_params)
+        self.vb_model.set_free(free_vb_params)
         self.hyper_params.set_free(free_hyper_params)
-        elbo = vi.compute_elboII(self.x, vb_params, hyper_params)
+        elbo = vi.compute_elboII(self.x, self.vb_model, self.hyper_params)
         return -1 * elbo
 
-    def get_prediction(self, vb_params):
-        phi_mu = self.vb_params['phi'].e()
-        nu = self.vb_params['nu'].get()
+    def get_prediction(self, vb_model):
+        phi_mu = self.vb_model['phi'].e()
+        nu = self.vb_model['nu'].get()
         return np.matmul(nu, phi_mu)
 
     def run_cavi(self, tau, nu, phi_mu, phi_var, max_iter=200, tol=1e-6):
@@ -281,9 +282,9 @@ class DataSetII(object):
 
     def get_moments(self, free_vb_params):
         # Return moments of interest.
-        self.vb_params.set_free(free_vb_params)
+        self.vb_model.set_free(free_vb_params)
         e_log_pi1, e_log_pi2, phi_moment1, phi_moment2, nu_moment =\
-                        vi.get_moments_VB(self.vb_params)
+                        vi.get_moments_VB(self.vb_model)
         return e_log_pi1, phi_moment1
 
     def get_moments_vector(self, free_vb_params):
@@ -291,23 +292,24 @@ class DataSetII(object):
         return packing.pack_moments(e_log_pi, e_mu)
 
     ## begin LRVB computations
-    def set_jacobians(self, free_vb_params):
+    def set_jacobians(self, free_vb_params, free_hyper_params):
         self.moment_jac_set = self.moments_jac(free_vb_params)
         self.kl_hess_set = self.get_kl_hessian(free_vb_params)
         self.par_hp_hess_set = \
-                self.get_kl_sens_hess(free_vb_params, self.hyper_params)
+                self.get_kl_sens_hess(free_vb_params, free_hyper_params)
         self.kl_hess_inv_set = np.linalg.inv(self.kl_hess_set)
 
     def local_prior_sensitivity(self):
         try:
             sensitivity_operator = \
-                        -1 * np.dot(self.kl_hess_inv_set, self.par_hp_hess_set.T)
+                    -1 * np.dot(self.kl_hess_inv_set, self.par_hp_hess_set.T)
             return np.matmul(self.moment_jac_set, sensitivity_operator)
         except AttributeError: # if the jacobians are not set yet, set them
             if hasattr(self, 'tr_opt'):
-                self.set_jacobians(self.tr_opt.x)
+                print(self.hyper_params.get_vector())
+                self.set_jacobians(self.tr_opt.x, self.hyper_params.get_free())
                 sensitivity_operator = \
-                            -1 * np.dot(self.kl_hess_inv_set, self.par_hp_hess_set.T)
+                    -1 * np.dot(self.kl_hess_inv_set, self.par_hp_hess_set.T)
                 return np.matmul(self.moment_jac_set, sensitivity_operator)
             else:
                 raise ValueError(\
@@ -317,8 +319,7 @@ class DataSetII(object):
         if not(hasattr(self, 'moment_jac_set')) or not(hasattr(self, 'kl_hess_inv_set')):
             # set jacobians if necessary
             if hasattr(self, 'tr_opt'):
-                self.set_jacobians(self.tr_opt.x, self.hyper_params)
-                print('hi')
+                self.set_jacobians(self.tr_opt.x, self.hyper_params.get_free())
             else:
                 raise ValueError(\
                     'Please run newton trust region to find an optima first')
@@ -333,8 +334,8 @@ class DataSetII(object):
         return np.dot(term1, term2*term3)
 
     def get_log_q_pi_k(self, free_vb_params, pi_k, k):
-        self.vb_params.set_free(free_vb_params)
-        return log_q_pi_k(pi_k, vb_params['pi'].alpha.get()[k,:])
+        self.vb_model.set_free(free_vb_params)
+        return log_q_pi_k(pi_k, self.vb_model['pi'].alpha.get()[k,:])
 
 
 ###################
