@@ -5,11 +5,11 @@ import unittest
 import finite_approx.functional_perturbation_lib as fun_pert
 
 from scipy.stats import beta
-
+from scipy import integrate
 
 class TestFunctionalPerturbation(unittest.TestCase):
     def u(self, x):
-        return(3 * x)
+        return(3.0 * x)
 
     def test_integration(self):
         k_approx = 3
@@ -25,8 +25,12 @@ class TestFunctionalPerturbation(unittest.TestCase):
         prior_density = beta.pdf(x, 1, alpha/k_approx)
 
         for k in range(k_approx):
-            variational_density = beta.pdf(x, tau[k,0], tau[k,1])
+            integrand = lambda x : beta.pdf(x, tau[k,0], tau[k,1]) * \
+                        (self.u(x) + beta.pdf(x, 1, alpha/k_approx))
 
-            truth = np.sum(variational_density * (self.u(x) + prior_density)\
-                                * delta, 0)
+            truth = integrate.quad(integrand, 0,1)
+
             self.assertTrue(np.abs(test[k] - truth) <= 10**(-8))
+
+    def test_integration(self):
+        pass

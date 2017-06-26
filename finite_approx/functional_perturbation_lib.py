@@ -14,7 +14,7 @@ def log_q_pi(pi, tau):
                     + (tau[:,1] - 1.0) * np.log(1.0 - pi)
 
 
-def exp_pi_prior_perturbed(tau, alpha, k_approx, u, n_grid):
+def exp_pi_prior_perturbed(tau, alpha, k_approx, u = lambda x : 0.0 * x, n_grid = 10000):
     # u(x) is the perturbations
     # n_grid is the number of points on our grid
     x = np.linspace(0.001, 0.999, n_grid)
@@ -23,7 +23,8 @@ def exp_pi_prior_perturbed(tau, alpha, k_approx, u, n_grid):
     # p0 = osp.stats.beta.logpdf(x, 1, alpha/k_approx)
     pert = u(x)
 
-    prior_density = np.exp(log_q_pi(x, np.array([[1,alpha/k_approx]])))
+    prior_tau = np.array([[1,alpha/k_approx]])
+    prior_density = np.exp(log_q_pi(x, prior_tau))
     assert len(prior_density) == n_grid
 
     # the broadcasting here bothers me ... but I guess it works
@@ -36,10 +37,6 @@ def exp_pi_prior_perturbed(tau, alpha, k_approx, u, n_grid):
     exp_beta_lh_perturbed = np.sum(integrand * delta, 0)
 
     return exp_beta_lh_perturbed
-
-
-def exp_log_pi_perturbed():
-    pass
 
 
 def exp_log_likelihood_perturb_pi(nu_moment, phi_moment1, phi_moment2, \
