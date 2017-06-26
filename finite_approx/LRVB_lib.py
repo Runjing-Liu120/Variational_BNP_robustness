@@ -383,7 +383,7 @@ def log_p0_z(z, pi):
 # pi stick lengths
 def log_p0_pi(pi, alpha, k_approx):
     # tau = np.array([np.full(k_approx, 1), np.full(k_approx, alpha/k_approx)]).T
-    tau = np.array([[1, alpha/k_approx]])
+    tau = np.array([[alpha/k_approx, 1]])
     return log_q_pi(pi, tau)
 
 def log_p0_all(a, z, pi, alpha, k_approx, sigma_a):
