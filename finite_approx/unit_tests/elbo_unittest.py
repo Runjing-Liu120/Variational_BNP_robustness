@@ -147,7 +147,7 @@ class TestElboComputation(unittest.TestCase):
 ## testing the VB library
 
 # initialize
-vb_params = vi.set_vb_model(num_samples, x_dim, k_approx)
+vb_params = vi.set_ibp_vb_model(num_samples, x_dim, k_approx)
 vb_params['phi'].set_vector(np.hstack([np.ravel(phi_mu.T), phi_var]))
 vb_params['pi'].set_vector(np.ravel(tau))
 vb_params['nu'].set_vector(np.ravel(nu))
