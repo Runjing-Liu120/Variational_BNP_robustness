@@ -187,7 +187,6 @@ def exp_log_likelihood(nu_moment, phi_moment1, phi_moment2, \
 
     # Compute the beta, bernoulli, and A terms.
     beta_lh = (alpha / float(K) - 1.) * np.sum(e_log_pi1)
-    #print('beta_lh', beta_lh)
     bern_lh = np.sum(nu_moment * (e_log_pi1 - e_log_pi2)) + \
               N * np.sum(e_log_pi2)
     norm_a_term = -0.5 * np.sum(phi_moment2) / sigma_a
@@ -315,11 +314,11 @@ def compute_elboII(x, vb_model, hyper_params):
 
     e_log_lik = exp_log_likelihood(nu_moment, phi_moment1, phi_moment2, \
                     e_log_pi1, e_log_pi2, sigma_a, sigma_eps, x, alpha)
-    #print('e_log_lik', e_log_lik)
+
     entropy = nu_entropy(nu_moment) \
             + phi_entropy(1/vb_model['phi'].info.get(), x.shape[1]) \
             + pi_entropy(vb_model['pi'].alpha.get())
-    #print('entropy', entropy)
+
     return e_log_lik + entropy
 
 class IBP_Finite_Model(object):

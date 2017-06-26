@@ -52,7 +52,7 @@ def exp_log_likelihood_perturbed(nu_moment, phi_moment1, phi_moment2, \
     # Compute the beta, bernoulli, and A terms.
     # beta_lh = (alpha / float(k_approx) - 1.) * np.sum(e_log_pi1)
     beta_lh = np.sum(e_beta_prior_perturbed)
-    # print('beta_lh', beta_lh)
+    #print('beta_lh', beta_lh)
 
     bern_lh = np.sum(nu_moment * (e_log_pi1 - e_log_pi2)) + \
               x_n * np.sum(e_log_pi2)
@@ -71,7 +71,7 @@ def exp_log_likelihood_perturbed(nu_moment, phi_moment1, phi_moment2, \
     return beta_lh + bern_lh + norm_a_term + norm_x_term
 
 def compute_elbo_perturbed(x, vb_model, hyper_params, u = lambda x : 0.0 * x, \
-                                    n_grid = 10000):
+                                    n_grid = 10**6):
     # get moments
     e_log_pi1, e_log_pi2, phi_moment1, phi_moment2, nu_moment =\
                     vi.get_moments_VB(vb_model)
@@ -81,7 +81,7 @@ def compute_elbo_perturbed(x, vb_model, hyper_params, u = lambda x : 0.0 * x, \
     alpha = hyper_params['alpha'].get()
     sigma_a = hyper_params['var_a'].get()
     sigma_eps = hyper_params['var_eps'].get()
-    k_approx = len(phi_moment2)
+    k_approx = np.shape(tau)[0]
 
     e_beta_prior_perturbed = compute_e_pi_prior_perturbed(\
                     tau, alpha, k_approx, u, n_grid)
@@ -89,11 +89,9 @@ def compute_elbo_perturbed(x, vb_model, hyper_params, u = lambda x : 0.0 * x, \
     e_log_lik = exp_log_likelihood_perturbed(nu_moment, phi_moment1, phi_moment2, \
                         e_beta_prior_perturbed, e_log_pi1, e_log_pi2,\
                         sigma_a, sigma_eps, x, alpha)
-    #print('e_log_lik', e_log_lik)
 
     entropy = vi.nu_entropy(nu_moment) \
             + vi.phi_entropy(1/vb_model['phi'].info.get(), x.shape[1]) \
             + vi.pi_entropy(vb_model['pi'].alpha.get())
 
-    #print('entropy: ', entropy)
     return e_log_lik + entropy
