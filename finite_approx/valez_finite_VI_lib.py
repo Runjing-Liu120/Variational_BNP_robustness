@@ -321,6 +321,8 @@ def compute_elboII(x, vb_model, hyper_params):
 
     return e_log_lik + entropy
 
+## Delete the class below; its not used
+## see the DataSetII class in the LRVB library, which does this and more
 class IBP_Finite_Model(object):
     def __init__(self, x, vb_model, hyper_params):
         self.vb_model = deepcopy(vb_model)
