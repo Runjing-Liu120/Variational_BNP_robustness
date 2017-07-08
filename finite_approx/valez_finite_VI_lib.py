@@ -174,8 +174,8 @@ def compute_elbo(tau, nu, phi_mu, phi_var, X, sigmas, alpha):
 
     D = X.shape[1]
     entropy = nu_entropy(nu) + phi_entropy(phi_var, D) + pi_entropy(tau)
-    print(e_log_lik)
-    print(entropy)
+    #print(e_log_lik)
+    #print(entropy)
     return e_log_lik + entropy
 
 
@@ -321,6 +321,8 @@ def compute_elboII(x, vb_model, hyper_params):
 
     return e_log_lik + entropy
 
+## Delete the class below; its not used
+## see the DataSetII class in the LRVB library, which does this and more
 class IBP_Finite_Model(object):
     def __init__(self, x, vb_model, hyper_params):
         self.vb_model = deepcopy(vb_model)
