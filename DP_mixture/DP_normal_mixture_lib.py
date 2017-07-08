@@ -4,6 +4,7 @@
 
 import autograd.numpy as np
 import autograd.scipy as sp
+from autograd import grad
 
 import scipy as osp
 
@@ -32,7 +33,7 @@ def beta_entropy(tau):
         (tau[:, 0] + tau[:, 1] - 2) * digamma_tausum)
 
 def multinom_entropy(e_z):
-    return -1 * np.sum(np.log(e_z ** e_z))
+    return -1 * np.sum(e_z * np.log(e_z))
 
 
 ################
@@ -96,11 +97,11 @@ def compute_elbo(x, mu, info, tau, e_log_v, e_log_1mv, e_z,
                     prior_mu, prior_info, info_x, alpha):
 
     # entropy terms
+    print(e_z)
     entropy = mu_entropy(info) + beta_entropy(tau) + multinom_entropy(e_z)
 
     return e_loglik_full(x, mu, info, tau, e_log_v, e_log_1mv, e_z,
                         prior_mu, prior_info, info_x, alpha) + entropy
-
 
 ############
 # CAVI update for z
@@ -131,7 +132,23 @@ class DPNormalMixture(object):
         e_log_v = self.vb_params['global']['v_sticks'].e_log()[:,0] # E[log v]
         e_log_1mv = self.vb_params['global']['v_sticks'].e_log()[:,1] # E[log 1 - v]
 
+        """
+        tau = self.vb_params['global']['v_sticks'].alpha.get()
+        e_z = self.vb_params['local']['e_z'].get()
+        prior_mu = self.prior_params['mu_prior_mean'].get()
+        prior_info = self.prior_params['mu_prior_info'].get()
+        info_x = self.prior_params['info_x'].get()
+        alpha = self.prior_params['alpha'].get()
+        get_auto_z_update = grad(e_loglik_full, 6)
+        auto_z_update = get_auto_z_update(
+                self.x, mu, info, tau, e_log_v, e_log_1mv, e_z,
+                prior_mu, prior_info, info_x, alpha)
+        log_const = sp.misc.logsumexp(auto_z_update, axis = 1)
+        e_z = np.exp(auto_z_update - log_const[:, None])
+        """
+
         e_z = z_update(mu, info, self.x, info_x, e_log_v, e_log_1mv)
+
         self.vb_params['local']['e_z'].set(e_z)
 
     def kl(self, verbose=False):
@@ -165,6 +182,8 @@ def draw_data(alpha, mu_prior, mu_prior_info, info_x, x_dim, k_approx, num_obs):
     # true means
     mu_spacing = np.linspace(-10, 10, k_approx)
     true_mu = np.array([ mu_spacing, mu_spacing]).T
+    # true_mu = np.random.multivariate_normal(np.zeros(x_dim), \
+    #                                        100 * np.eye(x_dim), k_approx)
 
     # draw beta sticks
     true_v = np.zeros(k_approx)
@@ -196,7 +215,7 @@ def draw_data(alpha, mu_prior, mu_prior_info, info_x, x_dim, k_approx, num_obs):
                for n in range(num_obs) ])
     return x, true_mu, true_z, true_z_ind, true_v, true_pi
 
-# draw samples from the variational distribution (used in for unittesting)
+# draw samples from the variational distribution (used in unittesting)
 def variational_samples(mu, info, tau, e_z, n_samples):
     # draw v sticks
     v_samples = osp.stats.beta.rvs(tau[:,0], tau[:,1], size = (n_samples, np.shape(tau)[0]))
