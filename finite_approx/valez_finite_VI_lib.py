@@ -9,7 +9,6 @@ import math
 import scipy as osp
 from scipy.special import expit
 
-
 #######################################
 # CAVI updates.
 
@@ -175,7 +174,8 @@ def compute_elbo(tau, nu, phi_mu, phi_var, X, sigmas, alpha):
 
     D = X.shape[1]
     entropy = nu_entropy(nu) + phi_entropy(phi_var, D) + pi_entropy(tau)
-
+    print(e_log_lik)
+    print(entropy)
     return e_log_lik + entropy
 
 
@@ -203,8 +203,9 @@ def exp_log_likelihood(nu_moment, phi_moment1, phi_moment2, \
 
     return beta_lh + bern_lh + norm_a_term + norm_x_term
 
-
+####################################
 # Draw from the variational (or conditional) disribution.
+
 def draw_z(nu, num_samples):
     return np.random.binomial(1, nu, size=(num_samples, nu.shape[0], nu.shape[1]))
 
@@ -265,4 +266,90 @@ def generate_data(num_samples, D, k_inf, sigma_a, sigma_eps, alpha):
     # the observed data
     X = np.matmul(Z, A) + epsilon
 
-    return pi, Z, mu, A, X
+    return pi, Z, A, X
+
+################################
+# rewrite model using VB library
+
+import sys
+# need both apparently... one lets the unittest run, the other lets
+# the jupyer notebook run...
+sys.path.append('../LinearResponseVariationalBayes.py')
+sys.path.append('../../LinearResponseVariationalBayes.py')
+
+from VariationalBayes.ParameterDictionary import ModelParamsDict
+from VariationalBayes.DirichletParams import DirichletParamArray
+from VariationalBayes.NormalParams import MVNArray
+from VariationalBayes.Parameters import ArrayParam, ScalarParam
+
+def set_ibp_vb_model(num_samples, x_d, k_approx):
+    vb_model = ModelParamsDict(name = 'vb_model')
+    # stick lengths
+    vb_model.push_param(DirichletParamArray(name='pi', shape=(k_approx, 2)))
+    # variational means
+    vb_model.push_param(MVNArray(name='phi', shape=(k_approx, x_d)))
+    # responsibilities
+    vb_model.push_param(ArrayParam(name = 'nu', \
+                shape = (num_samples, k_approx), lb = 0.0, ub = 1.0))
+    return vb_model
+
+def get_moments_VB(vb_model):
+    phi_moment1 = vb_model['phi'].e()
+    phi_moment2 = vb_model['phi'].e2()
+    nu_moment = vb_model['nu'].get()
+    e_log_pi1 = vb_model['pi'].e_log()[:,0]
+    e_log_pi2 = vb_model['pi'].e_log()[:,1]
+
+    return e_log_pi1, e_log_pi2, phi_moment1.T, phi_moment2.T, nu_moment
+
+def compute_elboII(x, vb_model, hyper_params):
+    # get moments
+    e_log_pi1, e_log_pi2, phi_moment1, phi_moment2, nu_moment =\
+                    get_moments_VB(vb_model)
+
+    # unpack hyper_params
+    alpha = hyper_params['alpha'].get()
+    sigma_a = hyper_params['var_a'].get()
+    sigma_eps = hyper_params['var_eps'].get()
+
+    e_log_lik = exp_log_likelihood(nu_moment, phi_moment1, phi_moment2, \
+                    e_log_pi1, e_log_pi2, sigma_a, sigma_eps, x, alpha)
+
+    entropy = nu_entropy(nu_moment) \
+            + phi_entropy(1/vb_model['phi'].info.get(), x.shape[1]) \
+            + pi_entropy(vb_model['pi'].alpha.get())
+
+    return e_log_lik + entropy
+
+class IBP_Finite_Model(object):
+    def __init__(self, x, vb_model, hyper_params):
+        self.vb_model = deepcopy(vb_model)
+        self.hyper_params = deepcopy(hyper_params)
+        self.x = x
+        self.x_d = np.shape(x)[1]
+
+    def elbo(self):
+        # get moments
+        e_log_pi1, e_log_pi2, phi_moment1, phi_moment2, nu_moment =\
+                        get_moments_VB(self.vb_model)
+
+        # unpack hyper_params
+        alpha = self.hyper_params['alpha'].get()
+        sigma_a = self.hyper_params['var_a'].get()
+        sigma_eps = self.hyper_params['var_eps'].get()
+
+        # compute expected log likelihood
+        e_log_lik = exp_log_likelihood(nu_moment, phi_moment1, phi_moment2, \
+                        e_log_pi1, e_log_pi2, sigma_a, sigma_eps, self.x, alpha)
+
+        # compute entropy
+        entropy = nu_entropy(nu_moment) \
+                + phi_entropy(1/self.vb_model['phi'].info.get(), self.x_d) \
+                + pi_entropy(self.vb_model['pi'].alpha.get())
+
+        return e_log_lik + entropy
+
+    def eval_elbo(self, free_vb_params, free_hyper_params):
+        self.vb_model.set_free(free_vb_params)
+        self.hyper_params.set_free(free_hyper_params)
+        return self.elbo()

@@ -132,7 +132,7 @@ class DataSet(object):
         return packing.pack_moments(e_log_pi, e_mu)
 
     ## begin LRVB computations
-    def set_jacobians(self, params, hyper_params):
+    def set_jacobians(self, params):
         self.moment_jac_set = self.moments_jac(params)
         self.kl_hess_set = self.get_kl_hessian(params)
         self.par_hp_hess_set = self.get_kl_sens_hess(params, self.hyper_params)
@@ -183,6 +183,161 @@ class DataSet(object):
     #    return log_q_a(a, phi_mu.T, phi_var) + log_q_z(z, nu) + log_q_pi(pi, tau)
 
 
+##############
+# same as above, but using VB library
+# that is, vb_model and hyper_params are instances of the ModelParamsDict class
+
+class DataSetII(object):
+    def __init__(self, x, vb_model, hyper_params):
+        self.vb_model = deepcopy(vb_model)
+        self.hyper_params = deepcopy(hyper_params)
+        self.x = x
+
+        self.alpha = hyper_params['alpha'].get()
+        self.sigmas = {'A': hyper_params['var_a'].get(),
+                            'eps': hyper_params['var_eps'].get()}
+        self.k_approx = np.shape(vb_model['phi'].e())[0]
+
+        self.get_kl_grad =  grad(
+            lambda params: self.wrapped_kl(params, tracing=False))
+        self.get_kl_hvp = hessian_vector_product(
+            lambda params: self.wrapped_kl(params, tracing=False))
+        self.get_kl_hessian = hessian(
+            lambda params: self.wrapped_kl(params, tracing=False))
+
+        # It turns out to be much faster to take the gradient wrt the
+        # small vector first.
+        self.get_wrapped_kl_hyperparams_hyperparamgrad = \
+            grad(self.wrapped_kl_hyperparams, argnum=1)
+        self.get_kl_sens_hess = \
+            jacobian(self.get_wrapped_kl_hyperparams_hyperparamgrad, argnum=0)
+
+        self.moments_jac = jacobian(self.get_moments_vector)
+
+        self.trace = OptimzationTrace()
+
+    def unpack_params(self, vb_model):
+        phi_mu = vb_model['phi'].mean.get()
+        phi_var = 1 / vb_model['phi'].info.get()
+        nu = vb_model['nu'].get()
+        tau = vb_model['pi'].alpha.get()
+
+        return tau, phi_mu.T, phi_var, nu
+
+    def cavi_updates(self, tau, nu, phi_mu, phi_var):
+        vi.cavi_updates(tau, nu, phi_mu, phi_var, \
+                        self.x, self.alpha, self.sigmas)
+
+    def wrapped_kl(self, free_vb_params, tracing=True):
+        self.vb_model.set_free(free_vb_params)
+        elbo = vi.compute_elboII(self.x, self.vb_model, self.hyper_params)
+        if tracing:
+            self.trace.update(free_vb_params, -1 * elbo)
+        return -1 * elbo
+
+    def wrapped_kl_hyperparams(self, free_vb_params, free_hyper_params):
+        self.vb_model.set_free(free_vb_params)
+        self.hyper_params.set_free(free_hyper_params)
+        elbo = vi.compute_elboII(self.x, self.vb_model, self.hyper_params)
+        return -1 * elbo
+
+    def get_prediction(self, vb_model):
+        phi_mu = self.vb_model['phi'].e()
+        nu = self.vb_model['nu'].get()
+        return np.matmul(nu, phi_mu)
+
+    def run_cavi(self, tau, nu, phi_mu, phi_var, max_iter=200, tol=1e-6):
+        params = packing.flatten_params(tau, nu, phi_mu, phi_var)
+
+        self.trace.reset()
+        diff = np.float('inf')
+        while diff > tol and self.trace.stepnum < max_iter:
+            self.cavi_updates(tau, nu, phi_mu, phi_var)
+            new_params = packing.flatten_params(tau, nu, phi_mu, phi_var)
+            diff = np.max(np.abs(new_params - params))
+            self.trace.update(params, diff)
+            if not np.isfinite(diff):
+                print('Error: non-finite parameter difference.')
+                break
+            params = new_params
+
+        if self.trace.stepnum >= max_iter:
+            print('Warning: CAVI reached max_iter.')
+
+        print('Done with CAVI.')
+        return tau, nu, phi_mu, phi_var
+
+
+    def run_newton_tr(self, params_init, maxiter=200, gtol=1e-6):
+        self.trace.reset()
+        self.tr_opt = optimize.minimize(
+            lambda params: self.wrapped_kl(params, tracing=True),
+            params_init, method='trust-ncg',
+            jac=self.get_kl_grad,
+            hessp=self.get_kl_hvp,
+            tol=1e-6, options={'maxiter': maxiter, 'disp': True, 'gtol': gtol })
+
+        print('Done with Newton trust region.')
+        return self.tr_opt
+
+    def get_moments(self, free_vb_params):
+        # Return moments of interest.
+        self.vb_model.set_free(free_vb_params)
+        e_log_pi1, e_log_pi2, phi_moment1, phi_moment2, nu_moment =\
+                        vi.get_moments_VB(self.vb_model)
+        return e_log_pi1, phi_moment1
+
+    def get_moments_vector(self, free_vb_params):
+        e_log_pi, e_mu = self.get_moments(free_vb_params)
+        return packing.pack_moments(e_log_pi, e_mu)
+
+    ## begin LRVB computations
+    def set_jacobians(self, free_vb_params, free_hyper_params):
+        self.moment_jac_set = self.moments_jac(free_vb_params)
+        self.kl_hess_set = self.get_kl_hessian(free_vb_params)
+        self.par_hp_hess_set = \
+                self.get_kl_sens_hess(free_vb_params, free_hyper_params)
+        self.kl_hess_inv_set = np.linalg.inv(self.kl_hess_set)
+
+    def local_prior_sensitivity(self):
+        try:
+            sensitivity_operator = \
+                    -1 * np.dot(self.kl_hess_inv_set, self.par_hp_hess_set.T)
+            return np.matmul(self.moment_jac_set, sensitivity_operator)
+        except AttributeError: # if the jacobians are not set yet, set them
+            if hasattr(self, 'tr_opt'):
+                print(self.hyper_params.get_vector())
+                self.set_jacobians(self.tr_opt.x, self.hyper_params.get_free())
+                sensitivity_operator = \
+                    -1 * np.dot(self.kl_hess_inv_set, self.par_hp_hess_set.T)
+                return np.matmul(self.moment_jac_set, sensitivity_operator)
+            else:
+                raise ValueError(\
+                    'Please run newton trust region to find an optima first')
+
+    def influence_function_pi(self, theta, k):
+        if not(hasattr(self, 'moment_jac_set')) or not(hasattr(self, 'kl_hess_inv_set')):
+            # set jacobians if necessary
+            if hasattr(self, 'tr_opt'):
+                self.set_jacobians(self.tr_opt.x, self.hyper_params.get_free())
+            else:
+                raise ValueError(\
+                    'Please run newton trust region to find an optima first')
+
+        log_q_pi_k_jac = jacobian(self.get_log_q_pi_k, 0)
+
+        term1 = np.dot(self.moment_jac_set, self.kl_hess_inv_set)
+        term2 = np.exp(self.get_log_q_pi_k(self.tr_opt.x, theta, k) \
+                            - log_p0_pi_k(theta, self.alpha, self.k_approx))
+        term3 = log_q_pi_k_jac(self.tr_opt.x, theta, k)
+
+        return np.dot(term1, term2*term3)
+
+    def get_log_q_pi_k(self, free_vb_params, pi_k, k):
+        self.vb_model.set_free(free_vb_params)
+        return log_q_pi_k(pi_k, self.vb_model['pi'].alpha.get()[k,:])
+
+
 ###################
 # Variational likelihoods
 
@@ -209,6 +364,8 @@ def log_q_pi(pi, tau):
 
     return np.sum(-log_beta + (tau[:,0] - 1) * np.log(pi) \
                     + (tau[:,1] - 1) * np.log(1 - pi))
+
+
 
 ####################
 # Prior likelihoods
