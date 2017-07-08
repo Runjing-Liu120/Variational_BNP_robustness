@@ -124,19 +124,17 @@ class TestElbo(unittest.TestCase):
 
 class TestCaviUpdate(unittest.TestCase):
     def test_z_update(self):
-        # initialize vb parameters
-        vb_params.set_free(np.random.random(vb_params.free_size()))
 
         # our manual update
         test_z_update = dp.z_update(mu, info, x, info_x, e_log_v, e_log_1mv)
 
         # autograd update
         get_auto_z_update = grad(dp.e_loglik_full, 6)
-        auto_z_update = np.exp(get_auto_z_update(
+        auto_z_update = get_auto_z_update(
                 x, mu, info, tau, e_log_v, e_log_1mv, e_z,
-                mu_prior, mu_prior_info, info_x, alpha))
-        const = np.sum(auto_z_update, axis = 1)
-        auto_z_update = auto_z_update / const[:, None]
+                mu_prior, mu_prior_info, info_x, alpha)
+        log_const = sp.misc.logsumexp(auto_z_update, axis = 1)
+        auto_z_update = np.exp(auto_z_update - log_const[:, None])
 
         # print(auto_z_update[0:5, :])
         # print(test_z_update[0:5, :])
