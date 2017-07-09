@@ -10,6 +10,8 @@ import scipy as osp
 
 from copy import deepcopy
 
+import matplotlib.pyplot as plt
+
 ################
 # define entropies
 def mu_entropy(mu_info):
@@ -127,6 +129,20 @@ class DPNormalMixture(object):
         # self.get_moment_jacobian = \
         #     autograd.jacobian(self.get_interesting_moments)
 
+
+
+    def set_optimal_z(self):
+        # note this isn't actually called in the kl method below
+        # since we don't want to compute e_log_v twice (it has digammas)
+        e_log_v, e_log_1mv, e_z, mu, info, tau = get_vb_params(self.vb_params)
+        prior_mu, prior_info, info_x, alpha = get_prior_params(self.prior_params)
+
+        # optimize z
+        e_z = z_update(mu, info, self.x, info_x, e_log_v, e_log_1mv, \
+                                        fudge_factor = 10**(-10))
+
+        self.vb_params['local']['e_z'].set(e_z)
+
     def kl(self, verbose=False):
         e_log_v, e_log_1mv, e_z, mu, info, tau = get_vb_params(self.vb_params)
         prior_mu, prior_info, info_x, alpha = get_prior_params(self.prior_params)
@@ -134,14 +150,7 @@ class DPNormalMixture(object):
         # optimize z
         e_z = z_update(mu, info, self.x, info_x, e_log_v, e_log_1mv, \
                                         fudge_factor = 10**(-10))
-        """
-        e_z_round = deepcopy(e_z)
-        e_z_round[e_z > 0.8] = 1.0
-        e_z_round[e_z < 0.2] = 0.0
-        print(e_z_round)
-        """
-        
-        self.vb_params['local']['e_z'].set(e_z)
+        # self.vb_params['local']['e_z'].set(e_z)
 
         elbo = compute_elbo(self.x, mu, info, tau, e_log_v, e_log_1mv, e_z,
                             prior_mu, prior_info, info_x, alpha)
@@ -243,3 +252,58 @@ def variational_samples(mu, info, tau, e_z, n_samples):
         z_samples[:, n, :] = np.random.multinomial(1, e_z[n, :], size = n_samples)
 
     return v_samples, pi_samples, mu_samples, z_samples
+
+###################
+# function to examine from vb
+def display_results(x, true_z, true_mu, e_z, mu, manual_perm = None):
+
+    x_dim = np.shape(x)[1]
+    n_obs = np.shape(x)[0]
+    k_approx = np.shape(true_z)[1]
+
+    print('true_z (unpermuted): \n', true_z[0:10])
+
+    # Find the minimizing permutation.
+    accuracy_mat = [[ np.linalg.norm(true_mu[i,:] - mu[j,:]) \
+                for i in range(k_approx)] for j in range(k_approx) ]
+    perm_tmp = np.argmin(accuracy_mat, 1)
+
+    # check that we have a true permuation
+    if len(perm_tmp) == len(set(perm_tmp)):
+        perm = perm_tmp
+    else:
+        print('** procedure did not give a true permutation')
+        if manual_perm == None:
+            perm = np.arange(k_approx)
+        else:
+            perm = manual_perm
+
+    print('permutation: ', perm)
+
+    # print Z (permuted) and nu
+    e_z_rounded = deepcopy(e_z)
+    e_z_rounded[e_z > 0.8] = 1.0
+    e_z_rounded[e_z < 0.2] = 0.0
+    print('true Z (permuted) \n', true_z[0:10, perm])
+    print('e_z (rounded) \n', e_z_rounded[0:10,:])
+
+    print('l1 error (after permutation): ', \
+        [ np.sum(np.abs(true_z[:, perm[i]] - e_z[:, i]))/n_obs
+            for i in range(k_approx) ])
+
+    # examine phi_mu
+    print('\n')
+    print('true A (permuted): \n', true_mu[perm, :])
+    print('poster mean A: \n', mu)
+
+    # plot posterior predictive
+    pred_x = np.dot(e_z, mu)
+    for col in range(x_dim):
+        plt.clf()
+        plt.plot(pred_x[:, col], x[:, col], 'ko')
+        diag = np.linspace(np.min(pred_x[:,col]),np.max(pred_x[:,col]))
+        plt.plot(diag,diag)
+        plt.title('Posterior predictive, column' + str(col))
+        plt.xlabel('predicted X')
+        plt.ylabel('true X')
+        plt.show()
