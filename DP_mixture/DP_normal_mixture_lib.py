@@ -10,6 +10,8 @@ import scipy as osp
 
 from copy import deepcopy
 
+import matplotlib.pyplot as plt
+
 ################
 # define entropies
 def mu_entropy(mu_info):
@@ -33,7 +35,7 @@ def beta_entropy(tau):
         (tau[:, 0] + tau[:, 1] - 2) * digamma_tausum)
 
 def multinom_entropy(e_z):
-    return -1 * np.sum(e_z * np.log(e_z))
+    return -1 * np.sum(np.log(e_z ** e_z))
 
 
 ################
@@ -97,7 +99,6 @@ def compute_elbo(x, mu, info, tau, e_log_v, e_log_1mv, e_z,
                     prior_mu, prior_info, info_x, alpha):
 
     # entropy terms
-    print(e_z)
     entropy = mu_entropy(info) + beta_entropy(tau) + multinom_entropy(e_z)
 
     return e_loglik_full(x, mu, info, tau, e_log_v, e_log_1mv, e_z,
@@ -105,12 +106,17 @@ def compute_elbo(x, mu, info, tau, e_log_v, e_log_1mv, e_z,
 
 ############
 # CAVI update for z
-def z_update(mu, info, x, info_x, e_log_v, e_log_1mv):
+def soft_thresh(e_z, ub, lb):
+    return (ub - lb) * e_z + lb
+
+def z_update(mu, info, x, info_x, e_log_v, e_log_1mv, fudge_factor = 0.0):
     log_propto = loglik_obs_by_nk(mu, info, x, info_x) + \
                     loglik_ind_by_k(e_log_v, e_log_1mv)
     log_denom = sp.misc.logsumexp(log_propto, axis = 1)
 
-    return np.exp(log_propto - log_denom[:, None])
+    e_z = np.exp(log_propto - log_denom[:, None])
+    return soft_thresh(e_z, 1 - fudge_factor, fudge_factor)
+
 
 ############
 # the object
@@ -123,48 +129,28 @@ class DPNormalMixture(object):
         # self.get_moment_jacobian = \
         #     autograd.jacobian(self.get_interesting_moments)
 
-    def optimize_z(self):
-        # Take a CAVI step on Z.
-        mu = self.vb_params['global']['mu'].get()
-        info = self.vb_params['global']['info'].get()
 
-        info_x = self.prior_params['info_x'].get()
-        e_log_v = self.vb_params['global']['v_sticks'].e_log()[:,0] # E[log v]
-        e_log_1mv = self.vb_params['global']['v_sticks'].e_log()[:,1] # E[log 1 - v]
 
-        """
-        tau = self.vb_params['global']['v_sticks'].alpha.get()
-        e_z = self.vb_params['local']['e_z'].get()
-        prior_mu = self.prior_params['mu_prior_mean'].get()
-        prior_info = self.prior_params['mu_prior_info'].get()
-        info_x = self.prior_params['info_x'].get()
-        alpha = self.prior_params['alpha'].get()
-        get_auto_z_update = grad(e_loglik_full, 6)
-        auto_z_update = get_auto_z_update(
-                self.x, mu, info, tau, e_log_v, e_log_1mv, e_z,
-                prior_mu, prior_info, info_x, alpha)
-        log_const = sp.misc.logsumexp(auto_z_update, axis = 1)
-        e_z = np.exp(auto_z_update - log_const[:, None])
-        """
+    def set_optimal_z(self):
+        # note this isn't actually called in the kl method below
+        # since we don't want to compute e_log_v twice (it has digammas)
+        e_log_v, e_log_1mv, e_z, mu, info, tau = get_vb_params(self.vb_params)
+        prior_mu, prior_info, info_x, alpha = get_prior_params(self.prior_params)
 
-        e_z = z_update(mu, info, self.x, info_x, e_log_v, e_log_1mv)
+        # optimize z
+        e_z = z_update(mu, info, self.x, info_x, e_log_v, e_log_1mv, \
+                                        fudge_factor = 10**(-10))
 
         self.vb_params['local']['e_z'].set(e_z)
 
     def kl(self, verbose=False):
-        self.optimize_z()
+        e_log_v, e_log_1mv, e_z, mu, info, tau = get_vb_params(self.vb_params)
+        prior_mu, prior_info, info_x, alpha = get_prior_params(self.prior_params)
 
-        e_log_v = self.vb_params['global']['v_sticks'].e_log()[:,0] # E[log v]
-        e_log_1mv = self.vb_params['global']['v_sticks'].e_log()[:,1] # E[log 1 - v]
-        e_z = self.vb_params['local']['e_z'].get()
-        mu = self.vb_params['global']['mu'].get()
-        info = self.vb_params['global']['info'].get()
-        tau = self.vb_params['global']['v_sticks'].alpha.get()
-
-        prior_mu = self.prior_params['mu_prior_mean'].get()
-        prior_info = self.prior_params['mu_prior_info'].get()
-        info_x = self.prior_params['info_x'].get()
-        alpha = self.prior_params['alpha'].get()
+        # optimize z
+        e_z = z_update(mu, info, self.x, info_x, e_log_v, e_log_1mv, \
+                                        fudge_factor = 10**(-10))
+        # self.vb_params['local']['e_z'].set(e_z)
 
         elbo = compute_elbo(self.x, mu, info, tau, e_log_v, e_log_1mv, e_z,
                             prior_mu, prior_info, info_x, alpha)
@@ -172,6 +158,7 @@ class DPNormalMixture(object):
             print('ELBO:\t', elbo)
 
         return -1 * elbo
+
 
 
 ################
@@ -215,6 +202,26 @@ def draw_data(alpha, mu_prior, mu_prior_info, info_x, x_dim, k_approx, num_obs):
                for n in range(num_obs) ])
     return x, true_mu, true_z, true_z_ind, true_v, true_pi
 
+def get_vb_params(vb_params):
+    e_log_v = vb_params['global']['v_sticks'].e_log()[:,0] # E[log v]
+    e_log_1mv = vb_params['global']['v_sticks'].e_log()[:,1] # E[log 1 - v]
+    e_z = vb_params['local']['e_z'].get()
+    mu = vb_params['global']['mu'].get()
+    info = vb_params['global']['info'].get()
+    tau = vb_params['global']['v_sticks'].alpha.get()
+
+    return e_log_v, e_log_1mv, e_z, mu, info, tau
+
+def get_prior_params(prior_params):
+    prior_mu = prior_params['mu_prior_mean'].get()
+    prior_info = prior_params['mu_prior_info'].get()
+    info_x = prior_params['info_x'].get()
+    alpha = prior_params['alpha'].get()
+
+    return prior_mu, prior_info, info_x, alpha
+
+
+
 # draw samples from the variational distribution (used in unittesting)
 def variational_samples(mu, info, tau, e_z, n_samples):
     # draw v sticks
@@ -245,3 +252,58 @@ def variational_samples(mu, info, tau, e_z, n_samples):
         z_samples[:, n, :] = np.random.multinomial(1, e_z[n, :], size = n_samples)
 
     return v_samples, pi_samples, mu_samples, z_samples
+
+###################
+# function to examine from vb
+def display_results(x, true_z, true_mu, e_z, mu, manual_perm = None):
+
+    x_dim = np.shape(x)[1]
+    n_obs = np.shape(x)[0]
+    k_approx = np.shape(true_z)[1]
+
+    print('true_z (unpermuted): \n', true_z[0:10])
+
+    # Find the minimizing permutation.
+    accuracy_mat = [[ np.linalg.norm(true_mu[i,:] - mu[j,:]) \
+                for i in range(k_approx)] for j in range(k_approx) ]
+    perm_tmp = np.argmin(accuracy_mat, 1)
+
+    # check that we have a true permuation
+    if len(perm_tmp) == len(set(perm_tmp)):
+        perm = perm_tmp
+    else:
+        print('** procedure did not give a true permutation')
+        if manual_perm == None:
+            perm = np.arange(k_approx)
+        else:
+            perm = manual_perm
+
+    print('permutation: ', perm)
+
+    # print Z (permuted) and nu
+    e_z_rounded = deepcopy(e_z)
+    e_z_rounded[e_z > 0.8] = 1.0
+    e_z_rounded[e_z < 0.2] = 0.0
+    print('true Z (permuted) \n', true_z[0:10, perm])
+    print('e_z (rounded) \n', e_z_rounded[0:10,:])
+
+    print('l1 error (after permutation): ', \
+        [ np.sum(np.abs(true_z[:, perm[i]] - e_z[:, i]))/n_obs
+            for i in range(k_approx) ])
+
+    # examine phi_mu
+    print('\n')
+    print('true A (permuted): \n', true_mu[perm, :])
+    print('poster mean A: \n', mu)
+
+    # plot posterior predictive
+    pred_x = np.dot(e_z, mu)
+    for col in range(x_dim):
+        plt.clf()
+        plt.plot(pred_x[:, col], x[:, col], 'ko')
+        diag = np.linspace(np.min(pred_x[:,col]),np.max(pred_x[:,col]))
+        plt.plot(diag,diag)
+        plt.title('Posterior predictive, column' + str(col))
+        plt.xlabel('predicted X')
+        plt.ylabel('true X')
+        plt.show()
