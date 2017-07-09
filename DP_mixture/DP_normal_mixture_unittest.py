@@ -29,13 +29,13 @@ num_obs = 100
 
 # prior parameters
 alpha = 1.2 # DP parameter
-mu_prior = np.zeros(x_dim)
-mu_prior_info = 1.0 * np.eye(x_dim)
+prior_mu = np.zeros(x_dim)
+prior_info = 1.0 * np.eye(x_dim)
 
 info_x = 1.0 * np.eye(x_dim)
 
 # draw data
-x = dp.draw_data(alpha, mu_prior, mu_prior_info, info_x, \
+x = dp.draw_data(alpha, prior_mu, prior_info, info_x, \
                             x_dim, k_approx, num_obs)[0]
 
 # set up vb model
@@ -88,11 +88,11 @@ class TestElbo(unittest.TestCase):
         self.assert_rel_close(dp_prior_computed, dp_prior_sampled)
 
     def test_normal_prior(self):
-        normal_prior_computed = dp.normal_prior(mu, info, mu_prior, mu_prior_info)
+        normal_prior_computed = dp.normal_prior(mu, info, prior_mu, prior_info)
         normal_prior_sampled = \
                 np.mean([- 0.5 * np.trace(\
-                    np.dot(np.dot(mu_samples[i,:,:] - mu_prior, mu_prior_info), \
-                    (mu_samples[i,:,:] - mu_prior).T))
+                    np.dot(np.dot(mu_samples[i,:,:] - prior_mu, prior_info), \
+                    (mu_samples[i,:,:] - prior_mu).T))
                     for i in range(mu_samples.shape[0])])
         # print(normal_prior_computed)
         # print(normal_prior_sampled)
@@ -122,7 +122,7 @@ class TestElbo(unittest.TestCase):
         self.assert_rel_close(data_lh_sampled, data_lh_computed)
 
 
-class TestCaviUpdate(unittest.TestCase):
+class TestCaviUpdates(unittest.TestCase):
     def test_z_update(self):
 
         # our manual update
@@ -132,7 +132,7 @@ class TestCaviUpdate(unittest.TestCase):
         get_auto_z_update = grad(dp.e_loglik_full, 6)
         auto_z_update = get_auto_z_update(
                 x, mu, info, tau, e_log_v, e_log_1mv, e_z,
-                mu_prior, mu_prior_info, info_x, alpha)
+                prior_mu, prior_info, info_x, alpha)
         log_const = sp.misc.logsumexp(auto_z_update, axis = 1)
         auto_z_update = np.exp(auto_z_update - log_const[:, None])
 
@@ -142,6 +142,23 @@ class TestCaviUpdate(unittest.TestCase):
         self.assertTrue(\
                 np.sum(np.abs(auto_z_update - test_z_update)) <= 10**(-8))
 
+    def test_tau_update(self):
+        # our manual update
+        test_tau_update = dp.tau_update(e_z, alpha)
+
+        # autograd update
+        get_tau1_update = grad(dp.compute_elbo, 4)
+        get_tau2_update = grad(dp.compute_elbo, 5)
+
+        auto_tau1_update = get_tau1_update(x, mu, info, tau, e_log_v, e_log_1mv, e_z,
+                    prior_mu, prior_info, info_x, alpha) + 1
+        auto_tau2_update = get_tau2_update(x, mu, info, tau, e_log_v, e_log_1mv, e_z,
+                            prior_mu, prior_info, info_x, alpha) + 1
+
+        self.assertTrue(\
+                np.sum(np.abs(test_tau_update[:,0] - auto_tau1_update)) <= 10**(-8))
+        self.assertTrue(\
+                np.sum(np.abs(test_tau_update[:,1] - auto_tau2_update)) <= 10**(-8))
 
 if __name__ == '__main__':
     unittest.main()

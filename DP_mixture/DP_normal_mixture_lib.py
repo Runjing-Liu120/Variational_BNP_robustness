@@ -105,7 +105,7 @@ def compute_elbo(x, mu, info, tau, e_log_v, e_log_1mv, e_z,
                         prior_mu, prior_info, info_x, alpha) + entropy
 
 ############
-# CAVI update for z
+# CAVI updates
 def soft_thresh(e_z, ub, lb):
     return (ub - lb) * e_z + lb
 
@@ -117,7 +117,32 @@ def z_update(mu, info, x, info_x, e_log_v, e_log_1mv, fudge_factor = 0.0):
     e_z = np.exp(log_propto - log_denom[:, None])
     return soft_thresh(e_z, 1 - fudge_factor, fudge_factor)
 
+def mu_update(x, e_z, prior_mu, prior_info, info_x):
+    k_approx = np.shape(e_z)[1]
+    info_update = np.array([prior_info + np.sum(e_z[:, i]) * info_x \
+                            for i in range(k_approx)])
+    nat_param = np.dot(prior_mu, prior_info) + np.dot(e_z.T, np.dot(x, info_x))
+    print(nat_param)
 
+    #mu_update = np.array([np.dot(nat_param[k,:], info_update[k])\
+    #                        for k in range(k_approx)])
+    mu_update = np.array([np.linalg.solve(info_update[k], nat_param[k,:])\
+                            for k in range(k_approx)])
+
+    return mu_update, info_update
+
+def tau_update(e_z, alpha):
+    k_approx = np.shape(e_z)[1]
+    sum_e_z = np.sum(e_z, axis = 0)
+    sum_e_z_upper = np.cumsum(sum_e_z[::-1])[::-1]
+
+    #cum_sum_z = np.concatenate(([0.0], np.cumsum(sum_e_z)[:-2]))
+
+    tau_update = np.zeros((k_approx - 1, 2))
+    tau_update[:, 0] = sum_e_z[:-1] + 1
+    tau_update[:, 1] = alpha + sum_e_z_upper[1:]
+
+    return tau_update
 ############
 # the object
 class DPNormalMixture(object):
@@ -213,8 +238,8 @@ def get_vb_params(vb_params):
     return e_log_v, e_log_1mv, e_z, mu, info, tau
 
 def get_prior_params(prior_params):
-    prior_mu = prior_params['mu_prior_mean'].get()
-    prior_info = prior_params['mu_prior_info'].get()
+    prior_mu = prior_params['prior_mu'].get()
+    prior_info = prior_params['prior_info'].get()
     info_x = prior_params['info_x'].get()
     alpha = prior_params['alpha'].get()
 
