@@ -35,8 +35,8 @@ prior_info = 1.0 * np.eye(x_dim)
 info_x = 1.0 * np.eye(x_dim)
 
 # draw data
-x = dp.draw_data(alpha, prior_mu, prior_info, info_x, \
-                            x_dim, k_approx, num_obs)[0]
+x = dp.draw_data(info_x, x_dim, k_approx, num_obs)[0]
+
 
 # set up vb model
 global_params = ModelParamsDict('global')
@@ -103,8 +103,8 @@ class TestElbo(unittest.TestCase):
                     z_samples[i, : , :], n = 1, p = pi_samples[i, :])) for\
                     i in range(np.shape(z_samples)[0])])
         z_lh_computed = dp.loglik_ind(e_z, e_log_v, e_log_1mv)
-        # print(z_lh_computed)
-        # print(z_lh_sampled)
+        print(z_lh_computed)
+        print(z_lh_sampled)
 
         self.assert_rel_close(z_lh_computed, z_lh_sampled)
 

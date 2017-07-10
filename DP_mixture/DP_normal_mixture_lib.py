@@ -4,13 +4,11 @@
 
 import autograd.numpy as np
 import autograd.scipy as sp
-from autograd import grad
 
 import scipy as osp
 
 from copy import deepcopy
 
-import matplotlib.pyplot as plt
 
 ################
 # define entropies
@@ -208,35 +206,19 @@ class DPNormalMixture(object):
 ################
 # other functions
 
-def draw_data(alpha, mu_prior, mu_prior_info, info_x, x_dim, k_approx, num_obs):
+def draw_data(info_x, x_dim, k_truth, num_obs):
 
     # true means
-    mu_spacing = np.linspace(-10, 10, k_approx)
+    mu_spacing = np.arange(k_truth) * 5
     true_mu = np.array([ mu_spacing, mu_spacing]).T
-    # true_mu = np.random.multivariate_normal(np.zeros(x_dim), \
-    #                                        100 * np.eye(x_dim), k_approx)
 
-    # draw beta sticks
-    true_v = np.zeros(k_approx)
-    true_pi = np.zeros(k_approx)
-    stick_remain = np.zeros(k_approx)
-
-    true_v[0] = np.random.beta(1, alpha)
-    true_pi[0] = true_v[0]
-    stick_remain[0] = 1 - true_v[0]
-
-    for i in range(1, k_approx):
-        if i == k_approx - 1: # the last stick
-            true_v[i] = 1.0
-        else:
-            true_v[i] = np.random.beta(1, alpha)
-
-        true_pi[i] = stick_remain[i - 1] * true_v[i]
-        stick_remain[i] = stick_remain[i - 1] * (1 - true_v[i])
+    # mixing proportions
+    true_pi = np.ones(k_truth)
+    true_pi = true_pi / k_truth
 
     # draw group indicators
-    true_z_ind = np.random.choice(range(k_approx), p = true_pi, size = num_obs)
-    true_z = np.zeros((num_obs, k_approx))
+    true_z_ind = np.random.choice(range(k_truth), p = true_pi, size = num_obs)
+    true_z = np.zeros((num_obs, k_truth))
     for i in range(num_obs):
         true_z[i, true_z_ind[i]] = 1.0
 
@@ -244,7 +226,8 @@ def draw_data(alpha, mu_prior, mu_prior_info, info_x, x_dim, k_approx, num_obs):
     x = np.array([ np.random.multivariate_normal(
                 true_mu[true_z_ind[n]], np.linalg.inv(info_x)) \
                for n in range(num_obs) ])
-    return x, true_mu, true_z, true_z_ind, true_v, true_pi
+
+    return x, true_mu, true_z, true_pi
 
 def get_vb_params(vb_params):
     e_log_v = vb_params['global']['v_sticks'].e_log()[:,0] # E[log v]
@@ -297,62 +280,3 @@ def variational_samples(mu, info, tau, e_z, n_samples):
         z_samples[:, n, :] = np.random.multinomial(1, e_z[n, :], size = n_samples)
 
     return v_samples, pi_samples, mu_samples, z_samples
-
-###################
-# function to examine from vb
-def display_results(x, true_z, true_mu, e_z, mu, true_v, tau, manual_perm = None):
-
-    x_dim = np.shape(x)[1]
-    n_obs = np.shape(x)[0]
-    k_approx = np.shape(true_z)[1]
-
-    # print('true_z (unpermuted): \n', true_z[0:10])
-
-    # Find the minimizing permutation.
-    accuracy_mat = [[ np.linalg.norm(true_mu[i,:] - mu[j,:]) \
-                for i in range(k_approx)] for j in range(k_approx) ]
-    perm_tmp = np.argmin(accuracy_mat, 1)
-
-    # check that we have a true permuation
-    if len(perm_tmp) == len(set(perm_tmp)):
-        perm = perm_tmp
-    else:
-        print('** procedure did not give a true permutation')
-        if manual_perm == None:
-            perm = np.arange(k_approx)
-        else:
-            perm = manual_perm
-
-    print('permutation: ', perm)
-
-    # print Z (permuted) and nu
-    e_z_rounded = deepcopy(e_z)
-    e_z_rounded[e_z > 0.8] = 1.0
-    e_z_rounded[e_z < 0.2] = 0.0
-    print('true Z (permuted) \n', true_z[0:10, perm])
-    print('e_z (rounded) \n', e_z_rounded[0:10,:])
-
-    print('l1 error (after permutation): ', \
-        [ np.sum(np.abs(true_z[:, perm[i]] - e_z[:, i]))/n_obs
-            for i in range(k_approx) ])
-
-    # examine phi_mu
-    print('\n')
-    print('true A (permuted): \n', true_mu[perm, :])
-    print('poster mean A: \n', mu)
-
-    # plot posterior predictive
-    pred_x = np.dot(e_z, mu)
-    for col in range(x_dim):
-        plt.clf()
-        plt.plot(pred_x[:, col], x[:, col], 'ko')
-        diag = np.linspace(np.min(pred_x[:,col]),np.max(pred_x[:,col]))
-        plt.plot(diag,diag)
-        plt.title('Posterior predictive, column' + str(col))
-        plt.xlabel('predicted X')
-        plt.ylabel('true X')
-        plt.show()
-
-    # check stick lengths
-    print('true stick lengths', true_v)
-    print('variational stick lengths: ', tau[:,0] / np.sum(tau, axis = 1))
