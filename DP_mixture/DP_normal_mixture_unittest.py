@@ -94,8 +94,8 @@ class TestElbo(unittest.TestCase):
                     np.dot(np.dot(mu_samples[i,:,:] - prior_mu, prior_info), \
                     (mu_samples[i,:,:] - prior_mu).T))
                     for i in range(mu_samples.shape[0])])
-        # print(normal_prior_computed)
-        # print(normal_prior_sampled)
+        print(normal_prior_computed)
+        print(normal_prior_sampled)
         self.assert_rel_close(normal_prior_computed, normal_prior_sampled)
 
     def test_z_lh(self):
