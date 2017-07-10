@@ -171,10 +171,10 @@ class DPNormalMixture(object):
 
         # optimize z
         e_z_opt = z_update(mu, info, self.x, self.info_x, e_log_v, e_log_1mv)
-        return e_z_opt
-        # self.vb_params['local']['e_z'].set(e_z_opt)
+        self.vb_params['local']['e_z'].set(e_z_opt)
 
     def get_kl(self, verbose = False):
+        # get the kl without optimizing z
         e_log_v, e_log_1mv, e_z, mu, info, tau = self.get_vb_params()
 
         elbo = compute_elbo(self.x, mu, info, tau, e_log_v, e_log_1mv, e_z,
@@ -185,8 +185,9 @@ class DPNormalMixture(object):
         return -1 * elbo
 
     def kl_optimize_z(self, verbose=False):
-        # this is the function that will be passed to the Newton
-        # optimization
+        # here we are optimizing z
+        # this is the function that will be passed to the Newton method
+
         e_log_v, e_log_1mv, e_z, mu, info, tau = self.get_vb_params()
 
         # optimize z
