@@ -149,20 +149,15 @@ class DPNormalMixture(object):
     def __init__(self, x, vb_params, prior_params):
         self.x = x
         self.vb_params = deepcopy(vb_params)
-        self.prior_params = deepcopy(prior_params)
 
         self.prior_mu, self.prior_info, self.info_x, self.alpha \
-                    = get_prior_params(self.prior_params)
-
-        # self.weights = np.full((x.shape[0], 1), 1.0)
-        # self.get_moment_jacobian = \
-        #     autograd.jacobian(self.get_interesting_moments)
+                    = get_prior_params(prior_params)
 
     def get_vb_params(self):
         e_log_v, e_log_1mv, e_z, mu, info, tau = get_vb_params(self.vb_params)
 
         return e_log_v, e_log_1mv, e_z, mu, info, tau
-
+    
     def set_optimal_z(self):
         # note this isn't actually called in the kl method below
         # since we don't want to compute e_log_v twice (it has digammas)
@@ -176,6 +171,7 @@ class DPNormalMixture(object):
     def get_kl(self, verbose = False):
         # get the kl without optimizing z
         e_log_v, e_log_1mv, e_z, mu, info, tau = self.get_vb_params()
+
 
         elbo = compute_elbo(self.x, mu, info, tau, e_log_v, e_log_1mv, e_z,
                         self.prior_mu, self.prior_info, self.info_x, self.alpha)
@@ -193,7 +189,6 @@ class DPNormalMixture(object):
         # optimize z
         e_z = z_update(mu, info, self.x, self.info_x, e_log_v, e_log_1mv, \
                                         fudge_factor = 10**(-10))
-        # self.vb_params['local']['e_z'].set(e_z)
 
         elbo = compute_elbo(self.x, mu, info, tau, e_log_v, e_log_1mv, e_z,
                         self.prior_mu, self.prior_info, self.info_x, self.alpha)
