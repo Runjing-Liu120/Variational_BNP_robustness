@@ -12,7 +12,10 @@ import matplotlib.pyplot as plt
 def run_cavi(model, init_par_vec, max_iter = 100, tol = 1e-8, disp = True):
 
     x = model.x
-    prior_mu, prior_info, info_x, alpha = dp.get_prior_params(model.prior_params)
+    prior_mu = model.prior_mu
+    prior_info = model.prior_info
+    info_x = model.info_x
+    alpha = model.alpha
 
     # initialize
     model.vb_params.set_free(init_par_vec)
