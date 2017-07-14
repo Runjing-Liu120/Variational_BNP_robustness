@@ -9,6 +9,7 @@ import scipy as osp
 
 from copy import deepcopy
 
+from DP_normal_mixture_opt_lib import z_update
 
 ################
 # define entropies
@@ -103,47 +104,6 @@ def compute_elbo(x, mu, info, tau, e_log_v, e_log_1mv, e_z,
                         prior_mu, prior_info, info_x, alpha) + entropy
 
 ############
-# CAVI updates
-def soft_thresh(e_z, ub, lb):
-    constrain = (ub - lb) * e_z + lb
-    renorm = np.sum(constrain, axis = 1)
-    return constrain / renorm[:, None]
-
-def z_update(mu, info, x, info_x, e_log_v, e_log_1mv, fudge_factor = 0.0):
-    log_propto = loglik_obs_by_nk(mu, info, x, info_x) + \
-                    loglik_ind_by_k(e_log_v, e_log_1mv)
-    log_denom = sp.misc.logsumexp(log_propto, axis = 1)
-
-    e_z_true = np.exp(log_propto - log_denom[:, None])
-    return soft_thresh(e_z_true, 1 - fudge_factor, fudge_factor)
-
-def mu_update(x, e_z, prior_mu, prior_info, info_x):
-    k_approx = np.shape(e_z)[1]
-    info_update = np.array([prior_info + np.sum(e_z[:, i]) * info_x \
-                            for i in range(k_approx)])
-    nat_param = np.dot(prior_mu, prior_info) + np.dot(e_z.T, np.dot(x, info_x))
-    # print(nat_param)
-
-    #mu_update = np.array([np.dot(nat_param[k,:], info_update[k])\
-    #                        for k in range(k_approx)])
-    mu_update = np.array([np.linalg.solve(info_update[k], nat_param[k,:])\
-                            for k in range(k_approx)])
-
-    return mu_update, info_update
-
-def tau_update(e_z, alpha):
-    k_approx = np.shape(e_z)[1]
-    sum_e_z = np.sum(e_z, axis = 0)
-    sum_e_z_upper = np.cumsum(sum_e_z[::-1])[::-1]
-
-    #cum_sum_z = np.concatenate(([0.0], np.cumsum(sum_e_z)[:-2]))
-
-    tau_update = np.zeros((k_approx - 1, 2))
-    tau_update[:, 0] = sum_e_z[:-1] + 1
-    tau_update[:, 1] = alpha + sum_e_z_upper[1:]
-
-    return tau_update
-############
 # the object
 class DPNormalMixture(object):
     def __init__(self, x, vb_params, prior_params):
@@ -157,7 +117,7 @@ class DPNormalMixture(object):
         e_log_v, e_log_1mv, e_z, mu, info, tau = get_vb_params(self.vb_params)
 
         return e_log_v, e_log_1mv, e_z, mu, info, tau
-    
+
     def set_optimal_z(self):
         # note this isn't actually called in the kl method below
         # since we don't want to compute e_log_v twice (it has digammas)
@@ -182,7 +142,9 @@ class DPNormalMixture(object):
 
     def kl_optimize_z(self, verbose=False):
         # here we are optimizing z
+        # we also exclude the multinomial entropy
         # this is the function that will be passed to the Newton method
+        # but do NOT use this to evaluate the KL :)
 
         e_log_v, e_log_1mv, e_z, mu, info, tau = self.get_vb_params()
 
@@ -190,8 +152,10 @@ class DPNormalMixture(object):
         e_z = z_update(mu, info, self.x, self.info_x, e_log_v, e_log_1mv, \
                                         fudge_factor = 10**(-10))
 
-        elbo = compute_elbo(self.x, mu, info, tau, e_log_v, e_log_1mv, e_z,
-                        self.prior_mu, self.prior_info, self.info_x, self.alpha)
+        elbo = e_loglik_full(self.x, mu, info, tau, e_log_v, e_log_1mv, e_z,
+                    self.prior_mu, self.prior_info, self.info_x, self.alpha) \
+                    + mu_entropy(info) + beta_entropy(tau)
+
         if verbose:
             print('kl:\t', -1 * elbo)
 
