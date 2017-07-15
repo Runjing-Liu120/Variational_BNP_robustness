@@ -17,8 +17,8 @@ def soft_thresh(e_z, ub, lb):
     renorm = np.sum(constrain, axis = 1)
     return constrain / renorm[:, None]
 
-def z_update(mu, info, x, info_x, e_log_v, e_log_1mv, fudge_factor = 0.0):
-    log_propto = dp.loglik_obs_by_nk(mu, info, x, info_x) + \
+def z_update(mu, mu2, x, info_x, e_log_v, e_log_1mv, fudge_factor = 0.0):
+    log_propto = dp.loglik_obs_by_nk(mu, mu2, x, info_x) + \
                     dp.loglik_ind_by_k(e_log_v, e_log_1mv)
     log_denom = sp.misc.logsumexp(log_propto, axis = 1)
 
@@ -85,8 +85,10 @@ def run_cavi(model, init_par_vec, max_iter = 100, tol = 1e-8, disp = True):
         e_log_1mv = model.vb_params['global']['v_sticks'].e_log()[:,1] # E[log 1 - v]
         mu = model.vb_params['global']['mu'].get()
         info = model.vb_params['global']['info'].get()
-
-        e_z_new = z_update(mu, info, x, info_x, e_log_v, e_log_1mv)
+        mu2 = np.array([np.linalg.inv(info[k]) + np.outer(mu[k,:], mu[k,:]) \
+                            for k in range(np.shape(mu)[0])])
+                            
+        e_z_new = z_update(mu, mu2, x, info_x, e_log_v, e_log_1mv)
         model.vb_params['local']['e_z'].set(e_z_new)
 
         # evaluate elbo
