@@ -146,12 +146,10 @@ class DPNormalMixture(object):
         return -1 * elbo
 
     def kl_optimize_z(self, verbose=False):
-        # here we are optimizing z
-        # we also exclude the multinomial entropy
+        # here we are optimizing z before computing the kl
         # this is the function that will be passed to the Newton method
-        # but do NOT use this to evaluate the KL :)
 
-        e_log_v, e_log_1mv, e_z, mu, mu2, info, tau = self.get_vb_params()
+        e_log_v, e_log_1mv, _, mu, mu2, info, tau = self.get_vb_params()
 
         # optimize z
         e_z = z_update(mu, mu2, self.x, self.info_x, e_log_v, e_log_1mv, \
@@ -160,15 +158,10 @@ class DPNormalMixture(object):
         elbo = compute_elbo(self.x, mu, mu2, info, tau, e_log_v, e_log_1mv, e_z,
                         self.prior_mu, self.prior_info, self.info_x, self.alpha)
 
-        #elbo = e_loglik_full(self.x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
-        #            self.prior_mu, self.prior_info, self.info_x, self.alpha) \
-        #            + mu_entropy(info) + beta_entropy(tau)
-
         if verbose:
             print('kl:\t', -1 * elbo)
 
         return -1 * elbo
-
 
 
 ################
