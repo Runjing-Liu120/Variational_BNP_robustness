@@ -9,6 +9,50 @@ import DP_normal_mixture_lib as dp
 
 import matplotlib.pyplot as plt
 
+
+############
+# CAVI updates
+def soft_thresh(e_z, ub, lb):
+    constrain = (ub - lb) * e_z + lb
+    renorm = np.sum(constrain, axis = 1)
+    return constrain / renorm[:, None]
+
+def z_update(mu, mu2, x, info_x, e_log_v, e_log_1mv, fudge_factor = 0.0):
+    log_propto = dp.loglik_obs_by_nk(mu, mu2, x, info_x) + \
+                    dp.loglik_ind_by_k(e_log_v, e_log_1mv)
+    log_denom = sp.misc.logsumexp(log_propto, axis = 1)
+
+    e_z_true = np.exp(log_propto - log_denom[:, None])
+    return soft_thresh(e_z_true, 1 - fudge_factor, fudge_factor)
+
+def mu_update(x, e_z, prior_mu, prior_info, info_x):
+    k_approx = np.shape(e_z)[1]
+    info_update = np.array([prior_info + np.sum(e_z[:, i]) * info_x \
+                            for i in range(k_approx)])
+    nat_param = np.dot(prior_mu, prior_info) + np.dot(e_z.T, np.dot(x, info_x))
+    # print(nat_param)
+
+    #mu_update = np.array([np.dot(nat_param[k,:], info_update[k])\
+    #                        for k in range(k_approx)])
+    mu_update = np.array([np.linalg.solve(info_update[k], nat_param[k,:])\
+                            for k in range(k_approx)])
+
+    return mu_update, info_update
+
+def tau_update(e_z, alpha):
+    k_approx = np.shape(e_z)[1]
+    sum_e_z = np.sum(e_z, axis = 0)
+    sum_e_z_upper = np.cumsum(sum_e_z[::-1])[::-1]
+
+    #cum_sum_z = np.concatenate(([0.0], np.cumsum(sum_e_z)[:-2]))
+
+    tau_update = np.zeros((k_approx - 1, 2))
+    tau_update[:, 0] = sum_e_z[:-1] + 1
+    tau_update[:, 1] = alpha + sum_e_z_upper[1:]
+
+    return tau_update
+
+
 def run_cavi(model, init_par_vec, max_iter = 100, tol = 1e-8, disp = True):
 
     x = model.x
@@ -28,11 +72,11 @@ def run_cavi(model, init_par_vec, max_iter = 100, tol = 1e-8, disp = True):
         # tau update
         e_z = model.vb_params['local']['e_z'].get()
 
-        tau_new = dp.tau_update(e_z, alpha)
+        tau_new = tau_update(e_z, alpha)
         model.vb_params['global']['v_sticks'].alpha.set(tau_new)
 
         # mu update
-        mu_new, info_new = dp.mu_update(x, e_z, prior_mu, prior_info, info_x)
+        mu_new, info_new = mu_update(x, e_z, prior_mu, prior_info, info_x)
         model.vb_params['global']['mu'].set(mu_new)
         model.vb_params['global']['info'].set(info_new)
 
@@ -41,8 +85,10 @@ def run_cavi(model, init_par_vec, max_iter = 100, tol = 1e-8, disp = True):
         e_log_1mv = model.vb_params['global']['v_sticks'].e_log()[:,1] # E[log 1 - v]
         mu = model.vb_params['global']['mu'].get()
         info = model.vb_params['global']['info'].get()
-
-        e_z_new = dp.z_update(mu, info, x, info_x, e_log_v, e_log_1mv)
+        mu2 = np.array([np.linalg.inv(info[k]) + np.outer(mu[k,:], mu[k,:]) \
+                            for k in range(np.shape(mu)[0])])
+                            
+        e_z_new = z_update(mu, mu2, x, info_x, e_log_v, e_log_1mv)
         model.vb_params['local']['e_z'].set(e_z_new)
 
         # evaluate elbo
