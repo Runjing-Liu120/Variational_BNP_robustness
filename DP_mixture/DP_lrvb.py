@@ -45,6 +45,7 @@ class DPAlphaSensitivity(object):
         return np.dot(sensitivity_operator.T, -1 * alpha_jac)
 
     def influence_function(self, theta, k, interesting_moments):
+        # here k is the prior stick you are perturbing
 
         get_moment_jac = autograd.jacobian(interesting_moments)
         moment_jac = get_moment_jac(self.optimal_global_free_params)
