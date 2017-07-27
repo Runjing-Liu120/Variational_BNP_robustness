@@ -10,6 +10,8 @@ from copy import deepcopy
 
 import DP_normal_mixture_lib as dp
 import DP_normal_mixture_opt_lib as dp_opt
+import DP_functional_perturbation_lib as fun_pert
+
 import sys
 sys.path.append('../../LinearResponseVariationalBayes.py')
 
@@ -175,6 +177,52 @@ class TestCaviUpdates(unittest.TestCase):
         self.assertTrue(\
                 np.sum(np.abs(test_tau_update[:,1] - auto_tau2_update)) <= 10**(-8))
 
+
+class TestFunctionalPerturbation(unittest.TestCase):
+    def u(self, x):
+        return(3.0 * x)
+
+    def test_integration(self):
+        test = fun_pert.dp_prior_perturbed\
+                            (tau, alpha, self.u, n_grid = 10**6)
+
+        truth = 0
+        for k in range(k_approx - 1):
+            integrand = lambda x : osp.stats.beta.pdf(x, tau[k,0], tau[k,1]) * \
+                    np.log(self.u(x) + osp.stats.beta.pdf(x, 1, alpha))
+
+            truth += osp.integrate.quad(integrand, 0, 1)[0]
+
+        self.assertTrue(np.abs(test - truth) <= 10**(-6))
+
+    def test_moment(self):
+        # test against moment (without pertubation)
+        true_moment = dp.dp_prior(alpha, e_log_1mv) -\
+                        e_log_1mv.shape[0] * osp.special.betaln(1, alpha)
+
+        #true_moment2 = (alpha - 1) * (osp.special.digamma(tau[:,1]) - \
+        #                osp.special.digamma(tau[:,0] + tau[:,1])) -\
+        #                osp.special.betaln(1, alpha)
+
+        test_moment = fun_pert.dp_prior_perturbed\
+                            (tau, alpha, n_grid = 10**6)
+                            # here, recall that the default perturbation is 0
+
+        print(np.abs(true_moment - test_moment))
+        self.assertTrue(np.abs(true_moment - test_moment) <= 10**(-6))
+
+    def test_elbo(self):
+        # without perturbation, check against old elbo computations
+        test_elbo = fun_pert.compute_elbo_perturbed(\
+                x, mu, mu2, info, tau, e_log_v, e_log_1mv, e_z,
+                prior_mu, prior_info, info_x, alpha, n_grid = 10**6)
+
+        true_elbo = dp.compute_elbo(x, mu, mu2, info, tau, e_log_v, e_log_1mv,
+                    e_z, prior_mu, prior_info, info_x, alpha) - \
+                    (k_approx - 1) * osp.special.betaln(1, alpha)
+
+        print(np.abs(test_elbo - true_elbo))
+        self.assertTrue(np.abs(test_elbo - true_elbo) <= 10**(-6))
 
 if __name__ == '__main__':
     unittest.main()
