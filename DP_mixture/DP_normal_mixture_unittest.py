@@ -200,9 +200,9 @@ class TestFunctionalPerturbation(unittest.TestCase):
         true_moment = dp.dp_prior(alpha, e_log_1mv) -\
                         e_log_1mv.shape[0] * osp.special.betaln(1, alpha)
 
-        true_moment2 = (alpha - 1) * (osp.special.digamma(tau[:,1]) - \
-                        osp.special.digamma(tau[:,0] + tau[:,1])) -\
-                        osp.special.betaln(1, alpha)
+        #true_moment2 = (alpha - 1) * (osp.special.digamma(tau[:,1]) - \
+        #                osp.special.digamma(tau[:,0] + tau[:,1])) -\
+        #                osp.special.betaln(1, alpha)
 
         test_moment = fun_pert.dp_prior_perturbed\
                             (tau, alpha, n_grid = 10**6)

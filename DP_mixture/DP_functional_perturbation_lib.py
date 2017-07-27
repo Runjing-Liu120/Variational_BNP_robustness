@@ -24,7 +24,7 @@ def dp_prior_perturbed(tau, alpha, u = lambda x : 0.0 * x, \
     # u(x) is the perturbations
     # n_grid is the number of points on our grid
     x = np.linspace(0.0, 1.0, n_grid)
-    x = x[1:-1]
+    x = x[1:-1] # ignore 0.0 and 1.0
     delta = x[1] - x[0]
 
     pert = u(x)
@@ -68,77 +68,32 @@ def compute_elbo_perturbed(x, mu, mu2, info, tau, e_log_v, e_log_1mv, e_z,
                         u = u, n_grid = n_grid) + entropy
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-class FunctionalPerturbation(object):
-    def __init__(self, x, vb_model, hyper_params, u = lambda x : 0.0 * x):
+class PerturbedKL(object):
+    def __init__(self, x, vb_params, prior_params, u):
         self.x = x
-        self.vb_model = deepcopy(vb_model)
-        self.hyper_params = deepcopy(hyper_params)
+        self.vb_params = deepcopy(vb_params)
         self.u = u
 
-        self.alpha = hyper_params['alpha'].get()
-        self.sigmas = {'A': hyper_params['var_a'].get(),
-                            'eps': hyper_params['var_eps'].get()}
-        self.k_approx = np.shape(vb_model['phi'].e())[0]
+        self.prior_mu, self.prior_info, self.info_x, self.alpha \
+                    = dp.get_prior_params(prior_params)
 
-        #self.get_kl_grad =  grad(self.wrapped_kl, 0)
-        #self.get_kl_hvp = hessian_vector_product(self.wrapped_kl, 0)
-        #self.get_kl_hessian = hessian(self.wrapped_kl, 0)
+    def set_optimal_z(self):
+        e_log_v, e_log_1mv, e_z, mu, mu2, info, tau \
+                        = dp.get_vb_params(self.vb_params)
 
-        #self.get_kl_grad =  grad(
-        #    lambda params: self.wrapped_kl(params, tracing=False))
-        #self.get_kl_hvp = hessian_vector_product(
-        #    lambda params: self.wrapped_kl(params, tracing=False))
-        #self.get_kl_hessian = hessian(
-        #    lambda params: self.wrapped_kl(params, tracing=False))
+        # optimize z
+        e_z_opt = dp.z_update(mu, mu2, self.x, self.info_x, e_log_v, e_log_1mv)
+        self.vb_params['local']['e_z'].set(e_z_opt)
 
-        self.trace = lrvb.OptimzationTrace()
+    def pertubed_kl(self):
+        e_log_v, e_log_1mv, _, mu, mu2, info, tau = \
+                        dp.get_vb_params(self.vb_params)
 
-    def unpack_params(self, vb_model):
-        phi_mu = vb_model['phi'].mean.get()
-        phi_var = 1 / vb_model['phi'].info.get()
-        nu = vb_model['nu'].get()
-        tau = vb_model['pi'].alpha.get()
+        # optimize z
+        e_z = dp.z_update(mu, mu2, self.x, self.info_x, e_log_v, e_log_1mv, \
+                                        fudge_factor = 10**(-10))
+        elbo = compute_elbo_perturbed(self.x, mu, mu2, info, tau, e_log_v, \
+                            e_log_1mv, e_z, self.prior_mu, self.prior_info, \
+                            self.info_x, self.alpha, u = self.u, n_grid = 10000)
 
-        return tau, phi_mu.T, phi_var, nu
-
-    def wrapped_kl(self, free_vb_params, n_grid, tracing=True):
-        self.vb_model.set_free(free_vb_params)
-        elbo = compute_elbo_perturbed(self.x, self.vb_model, \
-                self.hyper_params, self.u, n_grid)
-
-        if tracing:
-            self.trace.update(free_vb_params, -1 * elbo)
-        return -1 * elbo
-
-    def run_newton_tr(self, params_init, n_grid = 10**6, maxiter=200, gtol=1e-6):
-        get_kl_grad =  grad(
-            lambda params: self.wrapped_kl(params, n_grid, tracing=False))
-        get_kl_hvp = hessian_vector_product(
-            lambda params: self.wrapped_kl(params, n_grid, tracing=False))
-        get_kl_hessian = hessian(
-            lambda params: self.wrapped_kl(params, n_grid, tracing=False))
-
-        self.trace.reset()
-        self.tr_opt = optimize.minimize(
-            lambda params: self.wrapped_kl(params, n_grid, tracing=True),
-            params_init, method='trust-ncg',
-            jac = get_kl_grad,
-            hessp = get_kl_hvp,
-            tol=1e-6, options={'maxiter': maxiter, 'disp': True, 'gtol': gtol })
-
-        print('Done with Newton trust region.')
-        return self.tr_opt
+        return - 1.0 * elbo
