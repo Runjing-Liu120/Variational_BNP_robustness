@@ -22,34 +22,39 @@ from VariationalBayes.DirichletParams import DirichletParamArray
 from VariationalBayes.MatrixParameters import PosDefMatrixParam, PosDefMatrixParamVector
 from VariationalBayes.SparseObjectives import SparseObjective, Objective
 
-np.random.seed(12312)
+# np.random.seed(12312)
 
 # DP parameters
 x_dim = 2
 k_approx = 5
 num_obs = 100
 
+# draw data
+true_info_x = np.random.random((x_dim, x_dim)) # 1.0 * np.eye(x_dim)
+true_info_x = np.dot(true_info_x.T, true_info_x)
+x = dp.draw_data(true_info_x, x_dim, k_approx, num_obs)[0]
+
 # prior parameters
 alpha = 1.2 # DP parameter
 prior_mu = np.random.random(x_dim)
-prior_info = np.random.random((x_dim, x_dim))
-prior_info = np.dot(prior_info.T, prior_info)
+prior_inv_wishart_scale = np.random.random(x_dim)
+prior_inv_wishart_scale = np.dot(prior_inv_wishart_scale, prior_inv_wishart_scale)
 
-info_x = np.random.random((x_dim, x_dim)) # 1.0 * np.eye(x_dim)
-info_x = np.dot(info_x.T, info_x)
-
-# draw data
-x = dp.draw_data(info_x, x_dim, k_approx, num_obs)[0]
-
+prior_wishart_dof = x_dim + 3
+kappa = 2.0
 
 # set up vb model
 global_params = ModelParamsDict('global')
 global_params.push_param(
-    PosDefMatrixParamVector(name='info', length=k_approx, matrix_size=x_dim)) # variational variances
+    PosDefMatrixParamVector(name='info_mu', length=k_approx, matrix_size=x_dim)) # variational variances
 global_params.push_param(
     ArrayParam(name='mu', shape=(k_approx, x_dim))) # variational means
 global_params.push_param(
-    DirichletParamArray(name='v_sticks', shape=(k_approx - 1, 2)))
+    DirichletParamArray(name='v_sticks', shape=(k_approx - 1, 2))) # betas
+global_params.push_param(
+    PosDefMatrixParam(name='wishart_scale', size = x_dim)) # wishart
+global_params.push_param(
+    ScalarParam(name='wishart_dof', lb = x_dim - 1))
 
 local_params = ModelParamsDict('local')
 local_params.push_param(
@@ -63,12 +68,14 @@ vb_params.push_param(local_params)
 vb_params.set_free(np.random.random(vb_params.free_size()))
 
 # get moments
-e_log_v, e_log_1mv, e_z, mu, mu2, info, tau = dp.get_vb_params(vb_params)
+e_log_v, e_log_1mv, e_z, mu, mu2, info_mu, tau,\
+            e_info_x, e_logdet_info_x, dof = dp.get_vb_params(vb_params)
 
 # draw variational samples
 num_samples = 10**5
-v_samples, pi_samples, mu_samples, z_samples = \
-            dp.variational_samples(mu, info, tau, e_z, num_samples)
+v_samples, pi_samples, mu_samples, z_samples, info_samples = \
+            dp.variational_samples(mu, info_mu, tau, e_z, \
+                        e_info_x/dof, dof, num_samples)
 
 
 class TestElbo(unittest.TestCase):
@@ -88,11 +95,13 @@ class TestElbo(unittest.TestCase):
         self.assertTrue(np.abs(dp_prior_computed - dp_prior_samples_mean) < 0.01)
 
     def test_normal_prior(self):
-        normal_prior_computed = dp.normal_prior(mu, mu2, prior_mu, prior_info)\
-            - 0.5 * np.dot(np.dot(prior_mu, prior_info), prior_mu) * k_approx
+        normal_prior_computed =\
+            dp.normal_prior(mu, mu2, prior_mu, e_info_x, kappa)
+
         normal_prior_samples = \
                 [- 0.5 * np.trace(\
-                    np.dot(np.dot(mu_samples[i,:,:] - prior_mu, prior_info), \
+                    np.dot(np.dot(mu_samples[i,:,:] - prior_mu, \
+                    info_samples[i] * kappa), \
                     (mu_samples[i,:,:] - prior_mu).T))
                     for i in range(mu_samples.shape[0])]
 
@@ -106,7 +115,6 @@ class TestElbo(unittest.TestCase):
         self.assert_rel_close(normal_prior_computed, normal_prior_samples_mean, \
                     normal_prior_samples_std / np.sqrt(num_samples))
 
-
     def test_z_lh(self):
         z_lh_samples = np.array([np.sum(osp.stats.multinomial.logpmf(\
                     z_samples[i, : , :], n = 1, p = pi_samples[i, :])) for\
@@ -119,18 +127,19 @@ class TestElbo(unittest.TestCase):
         self.assert_rel_close(z_lh_computed, z_lh_samples_mean, \
                     z_lh_samples_std / np.sqrt(num_samples))
 
+
     def test_data_lh(self):
 
         data_lh_samples = np.zeros(num_samples)
         for i in range(num_samples):
             x_center = x - np.dot(z_samples[i,:,:], mu_samples[i,:,:])
             data_lh_samples[i] = - 0.5 * np.trace(\
-                    np.dot(np.dot(x_center, info_x), x_center.T))
+                    np.dot(np.dot(x_center, info_samples[i]), x_center.T))
+
         data_lh_samples_mean = np.mean(data_lh_samples)
         data_lh_samples_std = np.std(data_lh_samples)
 
-        data_lh_computed = dp.loglik_obs(e_z, mu, mu2, x, info_x) \
-                        - 0.5 * np.trace(np.dot(np.dot(x, info_x), x.T))
+        data_lh_computed = dp.loglik_obs(e_z, mu, mu2, x, e_info_x)
 
         print(data_lh_samples_mean)
         print(data_lh_samples_std / np.sqrt(num_samples))
@@ -140,6 +149,7 @@ class TestElbo(unittest.TestCase):
             data_lh_samples_std / np.sqrt(num_samples))
 
 
+"""
 class TestCaviUpdates(unittest.TestCase):
     def test_z_update(self):
 
@@ -223,6 +233,7 @@ class TestFunctionalPerturbation(unittest.TestCase):
 
         print(np.abs(test_elbo - true_elbo))
         self.assertTrue(np.abs(test_elbo - true_elbo) <= 10**(-6))
+"""
 
 if __name__ == '__main__':
     unittest.main()
