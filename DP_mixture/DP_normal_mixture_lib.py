@@ -60,13 +60,21 @@ def wishart_prior(e_info_x, e_logdet_info_x, inv_wishart_scale, dof):
     return 0.5 * (dof - dim - 1) * e_logdet_info_x \
         - 0.5 * np.trace(inv_wishart_scale * e_info_x)
 
-def normal_prior(mu, mu2, prior_mu, e_info_x, kappa):
+def normal_prior(mu, mu2, prior_mu, e_info_x, e_logdet_info_x, kappa):
     k_approx = np.shape(mu)[0]
-    prior_mu2 = np.outer(prior_mu, prior_mu)
+    prior_mu_tile = np.tile(prior_mu, (k_approx, 1))
 
-    return np.sum(np.dot(mu, np.dot(e_info_x * kappa, prior_mu)) \
-            - 0.5 * np.einsum('kij, ji -> k', mu2, e_info_x * kappa))\
-            - k_approx * 0.5 * np.einsum('ij, ji', prior_mu2, e_info_x * kappa)
+    e_mu2_centered = np.sum(mu2, axis = 0) - np.dot(mu.T, prior_mu_tile) \
+        - np.dot(prior_mu_tile.T, mu) + np.dot(prior_mu_tile.T, prior_mu_tile)
+
+    # prior_mu2 = np.outer(prior_mu, prior_mu)
+    # return np.sum(np.dot(mu, np.dot(e_info_x * kappa, prior_mu)) \
+    #          - 0.5 * np.einsum('kij, ji -> k', mu2, e_info_x * kappa))\
+    #          - k_approx * 0.5 * np.einsum('ij, ji', prior_mu2, e_info_x * kappa)\
+    #          + 0.5 * k_approx * e_logdet_info_x
+
+    return - 0.5 * np.einsum('ij, ji', e_mu2_centered, kappa * e_info_x)\
+            + 0.5 * k_approx * e_logdet_info_x
 
 
 ##############
@@ -86,16 +94,17 @@ def loglik_ind(e_z, e_log_v, e_log_1mv):
     # expected log likelihood of all indicators for all n observations
     return np.sum(np.dot(e_z, loglik_ind_by_k(e_log_v, e_log_1mv)))
 
-def loglik_obs_by_nk(mu, mu2, x, e_info_x):
+def loglik_obs_by_nk(mu, mu2, x, e_info_x, e_logdet_info_x):
     # expected log likelihood of nth observation when it belongs to component k
     k_approx = np.shape(mu)[0]
     return np.einsum('ni, ij, kj -> nk', x, e_info_x, mu) \
             - 0.5 * np.einsum('kij, ji -> k', mu2, e_info_x)[None, :]\
-            - 0.5 * np.einsum('ni, ij, nj -> n', x, e_info_x, x)[:, None]
+            - 0.5 * np.einsum('ni, ij, nj -> n', x, e_info_x, x)[:, None]\
+            + 0.5 * e_logdet_info_x
 
-def loglik_obs(e_z, mu, mu2, x, e_info_x):
+def loglik_obs(e_z, mu, mu2, x, e_info_x, e_logdet_info_x):
     # expected log likelihood of all observations
-    return np.sum(e_z * loglik_obs_by_nk(mu, mu2, x, e_info_x))
+    return np.sum(e_z * loglik_obs_by_nk(mu, mu2, x, e_info_x, e_logdet_info_x))
 
 def e_loglik_full(x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
                     e_info_x, e_logdet_info_x, prior_mu,
@@ -103,11 +112,11 @@ def e_loglik_full(x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
     # combining the pieces, compute the full expected log likelihood
 
     prior = dp_prior(alpha, e_log_1mv) \
-                + normal_prior(mu, mu2, prior_mu, e_info_x, kappa)\
-                + wishart_prior(e_info_x, e_logdet_info_x, \
+            + normal_prior(mu, mu2, prior_mu, e_info_x, e_logdet_info_x, kappa)\
+            + wishart_prior(e_info_x, e_logdet_info_x, \
                     prior_inv_wishart_scale, prior_dof)
 
-    return loglik_obs(e_z, mu, mu2, x, e_info_x) \
+    return loglik_obs(e_z, mu, mu2, x, e_info_x, e_logdet_info_x) \
                 + loglik_ind(e_z, e_log_v, e_log_1mv) + prior
 
 ############
@@ -229,10 +238,10 @@ def get_vb_params(vb_params):
     # TODO: you should compute a range of digammas at the start and then
     # just call them here ...
     dim = np.shape(wishart_scale)[0]
-    multi_digamma = np.sum([sp.special.digamma(dof - 0.5 * i )\
+    multi_digamma = np.sum([sp.special.digamma(dof/2 - 0.5 * i )\
                                 for i in range(dim)])
     e_logdet_info_x = multi_digamma + dim * np.log(2) \
-                        + np.linalg.slogdet(wishart_scale)[0]
+                        + np.linalg.slogdet(wishart_scale)[1]
 
     tau = vb_params['global']['v_sticks'].alpha.get()
 

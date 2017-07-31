@@ -22,7 +22,7 @@ from VariationalBayes.DirichletParams import DirichletParamArray
 from VariationalBayes.MatrixParameters import PosDefMatrixParam, PosDefMatrixParamVector
 from VariationalBayes.SparseObjectives import SparseObjective, Objective
 
-# np.random.seed(12312)
+np.random.seed(45242)
 
 # DP parameters
 x_dim = 2
@@ -41,7 +41,7 @@ prior_inv_wishart_scale = np.random.random(x_dim)
 prior_inv_wishart_scale = np.dot(prior_inv_wishart_scale, prior_inv_wishart_scale)
 
 prior_wishart_dof = x_dim + 3
-kappa = 2.0
+kappa = 1.5
 
 # set up vb model
 global_params = ModelParamsDict('global')
@@ -94,15 +94,31 @@ class TestElbo(unittest.TestCase):
 
         self.assertTrue(np.abs(dp_prior_computed - dp_prior_samples_mean) < 0.01)
 
+    def test_wishart_logdet(self):
+        logdet_samples = np.linalg.slogdet(info_samples)[1]
+        logdet_samples_mean = np.mean(np.linalg.slogdet(info_samples)[1])
+        logdet_samples_std = np.std(np.linalg.slogdet(info_samples)[1])
+
+        logdet_computed = e_logdet_info_x
+
+        print(logdet_computed)
+        print(logdet_samples_mean)
+        print(logdet_samples_std / np.sqrt(num_samples))
+
+        self.assert_rel_close(logdet_computed, logdet_samples_mean, \
+                    logdet_samples_std / np.sqrt(num_samples))
+
+
     def test_normal_prior(self):
         normal_prior_computed =\
-            dp.normal_prior(mu, mu2, prior_mu, e_info_x, kappa)
+            dp.normal_prior(mu, mu2, prior_mu, e_info_x, e_logdet_info_x, kappa)
 
         normal_prior_samples = \
                 [- 0.5 * np.trace(\
                     np.dot(np.dot(mu_samples[i,:,:] - prior_mu, \
                     info_samples[i] * kappa), \
                     (mu_samples[i,:,:] - prior_mu).T))
+                    + k_approx / 2 * np.linalg.slogdet(info_samples[i])[1]
                     for i in range(mu_samples.shape[0])]
 
         normal_prior_samples_mean = np.mean(normal_prior_samples)
@@ -134,12 +150,13 @@ class TestElbo(unittest.TestCase):
         for i in range(num_samples):
             x_center = x - np.dot(z_samples[i,:,:], mu_samples[i,:,:])
             data_lh_samples[i] = - 0.5 * np.trace(\
-                    np.dot(np.dot(x_center, info_samples[i]), x_center.T))
+                    np.dot(np.dot(x_center, info_samples[i]), x_center.T))\
+                    + np.shape(x)[0] / 2 * np.linalg.slogdet(info_samples[i])[1]
 
         data_lh_samples_mean = np.mean(data_lh_samples)
         data_lh_samples_std = np.std(data_lh_samples)
 
-        data_lh_computed = dp.loglik_obs(e_z, mu, mu2, x, e_info_x)
+        data_lh_computed = dp.loglik_obs(e_z, mu, mu2, x, e_info_x, e_logdet_info_x)
 
         print(data_lh_samples_mean)
         print(data_lh_samples_std / np.sqrt(num_samples))
@@ -149,23 +166,47 @@ class TestElbo(unittest.TestCase):
             data_lh_samples_std / np.sqrt(num_samples))
 
 
-"""
-class TestCaviUpdates(unittest.TestCase):
-    def test_z_update(self):
 
+class TestCaviUpdates(unittest.TestCase):
+    def test_mu_update(self):
         # our manual update
-        test_z_update = dp.z_update(mu, mu2, x, info_x, e_log_v, e_log_1mv)
+        test_mu_update, test_info_mu_update = \
+            dp_opt.mu_update(x, e_z, prior_mu, e_info_x, kappa)
+
+        get_mu_update = grad(dp.e_loglik_full, 1)
+        get_info_mu_update = grad(dp.e_loglik_full, 2)
+
+        auto_nat_mu_update = get_mu_update(x, mu, mu2, tau, e_log_v, e_log_1mv,\
+                        e_z, e_info_x, e_logdet_info_x, prior_mu,
+                        prior_inv_wishart_scale, kappa, prior_wishart_dof, alpha)
+
+        auto_info_mu_update = - 2.0 * get_info_mu_update(x, mu, mu2, tau,
+                        e_log_v, e_log_1mv, e_z,
+                        e_info_x, e_logdet_info_x, prior_mu,
+                        prior_inv_wishart_scale, kappa, prior_wishart_dof, alpha)
+
+        auto_mu_update = np.array([np.linalg.solve(auto_info_mu_update[k], auto_nat_mu_update[k,:])
+                                for k in range(k_approx)])
+
+        assert np.sum(np.abs(test_mu_update - auto_mu_update)) <= 1e-10
+
+
+    def test_z_update(self):
+        # our manual update
+        test_z_update = dp.z_update(mu, mu2, x, e_info_x, e_logdet_info_x, e_log_v, e_log_1mv)
 
         # autograd update
         get_auto_z_update = grad(dp.e_loglik_full, 6)
         auto_z_update = get_auto_z_update(
                 x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
-                prior_mu, prior_info, info_x, alpha)
+                e_info_x, e_logdet_info_x, prior_mu,
+                prior_inv_wishart_scale, kappa, prior_wishart_dof, alpha)
+
         log_const = sp.misc.logsumexp(auto_z_update, axis = 1)
         auto_z_update = np.exp(auto_z_update - log_const[:, None])
 
-        # print(auto_z_update[0:5, :])
-        # print(test_z_update[0:5, :])
+        #print(auto_z_update[0:5, :])
+        #print(test_z_update[0:5, :])
 
         self.assertTrue(\
                 np.sum(np.abs(auto_z_update - test_z_update)) <= 10**(-8))
@@ -178,16 +219,55 @@ class TestCaviUpdates(unittest.TestCase):
         get_tau2_update = grad(dp.e_loglik_full, 5)
 
         auto_tau1_update = get_tau1_update(x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
-                            prior_mu, prior_info, info_x, alpha) + 1
+                                            e_info_x, e_logdet_info_x, prior_mu,
+                                            prior_inv_wishart_scale, kappa,
+                                            prior_wishart_dof, alpha) + 1
         auto_tau2_update = get_tau2_update(x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
-                            prior_mu, prior_info, info_x, alpha) + 1
+                                            e_info_x, e_logdet_info_x, prior_mu,
+                                            prior_inv_wishart_scale, kappa,
+                                            prior_wishart_dof, alpha) + 1
 
         self.assertTrue(\
                 np.sum(np.abs(test_tau_update[:,0] - auto_tau1_update)) <= 10**(-8))
         self.assertTrue(\
                 np.sum(np.abs(test_tau_update[:,1] - auto_tau2_update)) <= 10**(-8))
+    """
+    def test_wishart_update(self):
+        test_wishart_scale, test_dof, prior_normal_term =\
+            dp_opt.wishart_updates(x, mu, mu2, e_z, prior_mu, \
+                    prior_inv_wishart_scale, prior_wishart_dof, kappa)
+
+        get_auto_dof_update = grad(dp.e_loglik_full, 8)
+        get_auto_wishart_scale_update = grad(dp.e_loglik_full, 7)
+
+        auto_dof_update = get_auto_dof_update\
+                            (x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
+                                    e_info_x, e_logdet_info_x, prior_mu,
+                                    prior_inv_wishart_scale, kappa,
+                                    prior_wishart_dof, alpha)
+        auto_wishart_scale_update = get_auto_wishart_scale_update\
+                            (x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
+                                    e_info_x, e_logdet_info_x, prior_mu,
+                                    prior_inv_wishart_scale, kappa,
+                                    prior_wishart_dof, alpha)
+
+        #print(test_dof)
+        #print(2 * auto_dof_update + np.shape(x)[1] + 1)
+
+        print(- 2.0 * auto_wishart_scale_update)
+        print(np.linalg.inv(test_wishart_scale))
+
+        
+
+        get_normal_term = grad(dp.normal_prior, 3)
+        normal_term = get_normal_term(mu, mu2, prior_mu, e_info_x, e_logdet_info_x, kappa)
+
+        print('\n', -2.0 * normal_term)
+        print(prior_normal_term)
+    """
 
 
+"""
 class TestFunctionalPerturbation(unittest.TestCase):
     def u(self, x):
         return(3.0 * x)

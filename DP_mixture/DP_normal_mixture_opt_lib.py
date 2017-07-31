@@ -17,27 +17,28 @@ def soft_thresh(e_z, ub, lb):
     renorm = np.sum(constrain, axis = 1)
     return constrain / renorm[:, None]
 
-def z_update(mu, mu2, x, info_x, e_log_v, e_log_1mv, fudge_factor = 0.0):
-    log_propto = dp.loglik_obs_by_nk(mu, mu2, x, info_x) + \
+def z_update(mu, mu2, x, e_info_x, e_logdet_info_x, e_log_v, e_log_1mv, fudge_factor = 0.0):
+    log_propto = dp.loglik_obs_by_nk(mu, mu2, x, e_info_x, e_logdet_info_x) + \
                     dp.loglik_ind_by_k(e_log_v, e_log_1mv)
     log_denom = sp.misc.logsumexp(log_propto, axis = 1)
 
     e_z_true = np.exp(log_propto - log_denom[:, None])
     return soft_thresh(e_z_true, 1 - fudge_factor, fudge_factor)
 
-def mu_update(x, e_z, prior_mu, prior_info, info_x):
+def mu_update(x, e_z, prior_mu, e_info_x, kappa):
     k_approx = np.shape(e_z)[1]
-    info_update = np.array([prior_info + np.sum(e_z[:, i]) * info_x \
+    info_mu_update = np.array([e_info_x * kappa + np.sum(e_z[:, i]) * e_info_x \
                             for i in range(k_approx)])
-    nat_param = np.dot(prior_mu, prior_info) + np.dot(e_z.T, np.dot(x, info_x))
+    nat_param = np.dot(prior_mu, e_info_x * kappa) \
+                    + np.dot(e_z.T, np.dot(x, e_info_x))
     # print(nat_param)
 
     #mu_update = np.array([np.dot(nat_param[k,:], info_update[k])\
     #                        for k in range(k_approx)])
-    mu_update = np.array([np.linalg.solve(info_update[k], nat_param[k,:])\
+    mu_update = np.array([np.linalg.solve(info_mu_update[k], nat_param[k,:])\
                             for k in range(k_approx)])
 
-    return mu_update, info_update
+    return mu_update, info_mu_update
 
 def tau_update(e_z, alpha):
     k_approx = np.shape(e_z)[1]
@@ -51,6 +52,28 @@ def tau_update(e_z, alpha):
     tau_update[:, 1] = alpha + sum_e_z_upper[1:]
 
     return tau_update
+
+def wishart_updates(x, mu, mu2, e_z, prior_mu, prior_inv_wishart_scale, prior_wishart_dof, kappa):
+    k_approx = np.shape(mu)[0]
+
+    prior_mu_tile = np.tile(prior_mu, (k_approx, 1))
+    prior_normal_term = kappa * (np.sum(mu2, axis = 0)\
+                                - np.dot(mu.T, prior_mu_tile) \
+                                - np.dot(prior_mu_tile.T, mu) \
+                                + k_approx * np.outer(prior_mu, prior_mu))
+
+    predictive = np.dot(e_z, mu)
+    outer_mu = np.array([np.outer(mu[i,:], mu[i,:]) for i in range(k_approx)])
+    z_sum = np.sum(e_z, axis = 0)
+
+    data_lh_term = np.dot(x.T, x) - np.dot(x.T, predictive) - np.dot(predictive.T, x)\
+                    + np.einsum('kij, k -> ij', outer_mu, z_sum)
+
+    inv_scale_update = prior_inv_wishart_scale + prior_normal_term + data_lh_term
+
+    dof_update = prior_wishart_dof + np.shape(x)[0] + k_approx
+
+    return np.linalg.inv(inv_scale_update), dof_update, prior_normal_term
 
 
 def run_cavi(model, init_par_vec, max_iter = 100, tol = 1e-8, disp = True):
