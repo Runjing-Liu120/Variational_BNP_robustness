@@ -57,31 +57,40 @@ def wishart_updates(x, mu, mu2, e_z, prior_mu, prior_inv_wishart_scale, prior_wi
     k_approx = np.shape(mu)[0]
 
     prior_mu_tile = np.tile(prior_mu, (k_approx, 1))
+    cross_term1 = np.dot(mu.T, prior_mu_tile)
     prior_normal_term = kappa * (np.sum(mu2, axis = 0)\
-                                - np.dot(mu.T, prior_mu_tile) \
-                                - np.dot(prior_mu_tile.T, mu) \
+                                - cross_term1 - cross_term1.T \
                                 + k_approx * np.outer(prior_mu, prior_mu))
 
     predictive = np.dot(e_z, mu)
     outer_mu = np.array([np.outer(mu[i,:], mu[i,:]) for i in range(k_approx)])
     z_sum = np.sum(e_z, axis = 0)
 
-    data_lh_term = np.dot(x.T, x) - np.dot(x.T, predictive) - np.dot(predictive.T, x)\
+    cross_term2 = np.dot(x.T, predictive)
+    data_lh_term = np.dot(x.T, x) - cross_term2 - cross_term2.T\
                     + np.einsum('kij, k -> ij', outer_mu, z_sum)
 
     inv_scale_update = prior_inv_wishart_scale + prior_normal_term + data_lh_term
 
     dof_update = prior_wishart_dof + np.shape(x)[0] + k_approx
 
-    return np.linalg.inv(inv_scale_update), dof_update, prior_normal_term
+    # there's some numerical issues in which the update is not exactly symmetric
+    if np.any(np.abs(inv_scale_update - inv_scale_update.T) >= 1e-10):
+        print(inv_scale_update - inv_scale_update.T)
+
+    inv_scale_update = 0.5 * (inv_scale_update + inv_scale_update.T)
+
+    return inv_scale_update, np.array([dof_update])
 
 
 def run_cavi(model, init_par_vec, max_iter = 100, tol = 1e-8, disp = True):
 
     x = model.x
+
     prior_mu = model.prior_mu
-    prior_info = model.prior_info
-    info_x = model.info_x
+    prior_wishart_dof = model.prior_dof
+    prior_inv_wishart_scale = model.prior_inv_wishart_scale
+    kappa = model.kappa
     alpha = model.alpha
 
     # initialize
@@ -94,24 +103,35 @@ def run_cavi(model, init_par_vec, max_iter = 100, tol = 1e-8, disp = True):
 
         # tau update
         e_z = model.vb_params['local']['e_z'].get()
-
         tau_new = tau_update(e_z, alpha)
         model.vb_params['global']['v_sticks'].alpha.set(tau_new)
 
         # mu update
-        mu_new, info_new = mu_update(x, e_z, prior_mu, prior_info, info_x)
+        e_info_x = np.linalg.inv(model.vb_params['global']['inv_wishart_scale'].get())\
+                    * model.vb_params['global']['wishart_dof'].get()
+        mu_new, info_new = mu_update(x, e_z, prior_mu, e_info_x, kappa)
         model.vb_params['global']['mu'].set(mu_new)
-        model.vb_params['global']['info'].set(info_new)
+        model.vb_params['global']['info_mu'].set(info_new)
+
+        # wishart update
+        mu = model.vb_params['global']['mu'].get()
+        mu2 = np.array([np.linalg.inv(info_new[k]) + np.outer(mu[k,:], mu[k,:]) \
+                            for k in range(np.shape(mu)[0])])
+        inv_wishart_scale_new, wishart_dof_new = \
+            wishart_updates(x, mu, mu2, e_z, prior_mu, \
+                    prior_inv_wishart_scale, prior_wishart_dof, kappa)
+
+        model.vb_params['global']['inv_wishart_scale'].set(inv_wishart_scale_new)
+        model.vb_params['global']['wishart_dof'].set(wishart_dof_new)
 
         # z update
         e_log_v = model.vb_params['global']['v_sticks'].e_log()[:,0] # E[log v]
         e_log_1mv = model.vb_params['global']['v_sticks'].e_log()[:,1] # E[log 1 - v]
-        mu = model.vb_params['global']['mu'].get()
-        info = model.vb_params['global']['info'].get()
-        mu2 = np.array([np.linalg.inv(info[k]) + np.outer(mu[k,:], mu[k,:]) \
-                            for k in range(np.shape(mu)[0])])
+        e_info_x = np.linalg.inv(inv_wishart_scale_new) * wishart_dof_new
+        e_logdet_info_x = dp.get_wishart_e_logdet(e_info_x/wishart_dof_new, wishart_dof_new)
 
-        e_z_new = z_update(mu, mu2, x, info_x, e_log_v, e_log_1mv)
+        e_z_new = z_update(mu, mu2, x, e_info_x, e_logdet_info_x, \
+                            e_log_v, e_log_1mv)
         model.vb_params['local']['e_z'].set(e_z_new)
 
         # evaluate elbo

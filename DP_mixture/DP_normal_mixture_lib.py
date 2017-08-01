@@ -221,6 +221,17 @@ def draw_data(info_x, x_dim, k_truth, num_obs):
 
     return x, true_mu, true_z, true_pi
 
+def get_wishart_e_logdet(wishart_scale, dof):
+    # TODO: you should compute a range of digammas at the start and then
+    # just call them here ...
+
+    dim = np.shape(wishart_scale)[0]
+    multi_digamma = np.sum([sp.special.digamma(dof/2 - 0.5 * i )\
+                                for i in range(dim)])
+    return multi_digamma + dim * np.log(2) \
+                        + np.linalg.slogdet(wishart_scale)[1]
+
+
 def get_vb_params(vb_params):
     e_log_v = vb_params['global']['v_sticks'].e_log()[:,0] # E[log v]
     e_log_1mv = vb_params['global']['v_sticks'].e_log()[:,1] # E[log 1 - v]
@@ -232,16 +243,10 @@ def get_vb_params(vb_params):
                         for k in range(np.shape(mu)[0])])
 
     dof = vb_params['global']['wishart_dof'].get()[0]
-    wishart_scale = vb_params['global']['wishart_scale'].get()
+    wishart_scale = np.linalg.inv(vb_params['global']['inv_wishart_scale'].get())
     e_info_x = dof * wishart_scale
 
-    # TODO: you should compute a range of digammas at the start and then
-    # just call them here ...
-    dim = np.shape(wishart_scale)[0]
-    multi_digamma = np.sum([sp.special.digamma(dof/2 - 0.5 * i )\
-                                for i in range(dim)])
-    e_logdet_info_x = multi_digamma + dim * np.log(2) \
-                        + np.linalg.slogdet(wishart_scale)[1]
+    e_logdet_info_x = get_wishart_e_logdet(wishart_scale, dof)
 
     tau = vb_params['global']['v_sticks'].alpha.get()
 

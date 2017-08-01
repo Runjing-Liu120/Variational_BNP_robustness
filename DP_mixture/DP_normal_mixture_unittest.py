@@ -52,7 +52,7 @@ global_params.push_param(
 global_params.push_param(
     DirichletParamArray(name='v_sticks', shape=(k_approx - 1, 2))) # betas
 global_params.push_param(
-    PosDefMatrixParam(name='wishart_scale', size = x_dim)) # wishart
+    PosDefMatrixParam(name='inv_wishart_scale', size = x_dim)) # wishart
 global_params.push_param(
     ScalarParam(name='wishart_dof', lb = x_dim - 1))
 
@@ -257,7 +257,7 @@ class TestCaviUpdates(unittest.TestCase):
         print(- 2.0 * auto_wishart_scale_update)
         print(np.linalg.inv(test_wishart_scale))
 
-        
+
 
         get_normal_term = grad(dp.normal_prior, 3)
         normal_term = get_normal_term(mu, mu2, prior_mu, e_info_x, e_logdet_info_x, kappa)
