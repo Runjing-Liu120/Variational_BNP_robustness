@@ -39,11 +39,12 @@ def multinom_entropy(e_z):
 def wishart_entropy(e_logdet_info_x, e_info_x, dof):
     dim = np.shape(e_info_x)[0]
     assert dim == np.shape(e_info_x)[1]
-    assert dof > dim
+    assert dof > dim - 1
 
     const = 0.5 * dof * np.linalg.slogdet(e_info_x / dof)[1] \
             + 0.5 * dof * dim * np.log(2) \
             + sp.special.multigammaln(dof/2, dim)
+
     return const - 0.5 * (dof - dim - 1) * e_logdet_info_x + dof * dim / 2
 
 ################
@@ -63,18 +64,19 @@ def wishart_prior(e_info_x, e_logdet_info_x, inv_wishart_scale, dof):
 def normal_prior(mu, mu2, prior_mu, e_info_x, e_logdet_info_x, kappa):
     k_approx = np.shape(mu)[0]
     prior_mu_tile = np.tile(prior_mu, (k_approx, 1))
+    cross_term = np.dot(mu.T, prior_mu_tile)
 
-    e_mu2_centered = np.sum(mu2, axis = 0) - np.dot(mu.T, prior_mu_tile) \
-        - np.dot(prior_mu_tile.T, mu) + np.dot(prior_mu_tile.T, prior_mu_tile)
+    e_mu2_centered = np.sum(mu2, axis = 0) - cross_term - cross_term.T \
+            + np.dot(prior_mu_tile.T, prior_mu_tile)
+
+    return - 0.5 * np.einsum('ij, ji', e_mu2_centered, kappa * e_info_x)\
+            + 0.5 * k_approx * e_logdet_info_x
 
     # prior_mu2 = np.outer(prior_mu, prior_mu)
     # return np.sum(np.dot(mu, np.dot(e_info_x * kappa, prior_mu)) \
     #          - 0.5 * np.einsum('kij, ji -> k', mu2, e_info_x * kappa))\
     #          - k_approx * 0.5 * np.einsum('ij, ji', prior_mu2, e_info_x * kappa)\
     #          + 0.5 * k_approx * e_logdet_info_x
-
-    return - 0.5 * np.einsum('ij, ji', e_mu2_centered, kappa * e_info_x)\
-            + 0.5 * k_approx * e_logdet_info_x
 
 
 ##############
@@ -94,17 +96,16 @@ def loglik_ind(e_z, e_log_v, e_log_1mv):
     # expected log likelihood of all indicators for all n observations
     return np.sum(np.dot(e_z, loglik_ind_by_k(e_log_v, e_log_1mv)))
 
-def loglik_obs_by_nk(mu, mu2, x, e_info_x, e_logdet_info_x):
+def loglik_obs_by_nk(mu, mu2, x, e_info_x):
     # expected log likelihood of nth observation when it belongs to component k
-    k_approx = np.shape(mu)[0]
     return np.einsum('ni, ij, kj -> nk', x, e_info_x, mu) \
             - 0.5 * np.einsum('kij, ji -> k', mu2, e_info_x)[None, :]\
             - 0.5 * np.einsum('ni, ij, nj -> n', x, e_info_x, x)[:, None]\
-            + 0.5 * e_logdet_info_x
 
 def loglik_obs(e_z, mu, mu2, x, e_info_x, e_logdet_info_x):
     # expected log likelihood of all observations
-    return np.sum(e_z * loglik_obs_by_nk(mu, mu2, x, e_info_x, e_logdet_info_x))
+    return np.sum(e_z * (loglik_obs_by_nk(mu, mu2, x, e_info_x) \
+                    + 0.5 * e_logdet_info_x))
 
 def e_loglik_full(x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
                     e_info_x, e_logdet_info_x, prior_mu,
@@ -152,16 +153,17 @@ class DPNormalMixture(object):
         return e_log_v, e_log_1mv, e_z, mu, mu2, info_mu, tau,\
                     e_info_x, e_logdet_info_x, dof
 
-    """def set_optimal_z(self):
+    def set_optimal_z(self):
         # note this isn't actually called in the kl method below
         # since we don't want to compute e_log_v twice (it has digammas)
 
-        e_log_v, e_log_1mv, e_z, mu, mu2, info, tau = self.get_vb_params()
+        e_log_v, e_log_1mv, e_z, mu, mu2, info_mu, tau,\
+                    e_info_x, e_logdet_info_x, dof = self.get_vb_params()
 
         # optimize z
-        e_z_opt = z_update(mu, mu2, self.x, self.info_x, e_log_v, e_log_1mv)
+        e_z_opt = z_update(mu, mu2, self.x, e_info_x, e_log_v, e_log_1mv)
         self.vb_params['local']['e_z'].set(e_z_opt)
-    """
+
     def get_kl(self, verbose = False):
         # get the kl without optimizing z
         e_log_v, e_log_1mv, e_z, mu, mu2, info_mu, tau,\
@@ -175,25 +177,27 @@ class DPNormalMixture(object):
             print('kl:\t', -1 * elbo)
 
         return -1 * elbo
-    """
+
     def kl_optimize_z(self, verbose=False):
         # here we are optimizing z before computing the kl
         # this is the function that will be passed to the Newton method
 
-        e_log_v, e_log_1mv, _, mu, mu2, info, tau = self.get_vb_params()
+        e_log_v, e_log_1mv, _, mu, mu2, info_mu, tau,\
+                    e_info_x, e_logdet_info_x, dof = self.get_vb_params()
 
         # optimize z
-        e_z = z_update(mu, mu2, self.x, self.info_x, e_log_v, e_log_1mv, \
-                                        fudge_factor = 10**(-10))
+        e_z = z_update(mu, mu2, self.x, e_info_x, e_log_v, e_log_1mv)
 
-        elbo = compute_elbo(self.x, mu, mu2, info, tau, e_log_v, e_log_1mv, e_z,
-                        self.prior_mu, self.prior_info, self.info_x, self.alpha)
+        elbo = compute_elbo(self.x, mu, mu2, info_mu, tau, e_log_v, e_log_1mv, \
+                            e_z, e_info_x, e_logdet_info_x, dof, self.prior_mu,\
+                            self.prior_inv_wishart_scale, self.kappa,\
+                            self.prior_dof, self.alpha)
 
         if verbose:
             print('kl:\t', -1 * elbo)
 
         return -1 * elbo
-    """
+
 
 ################
 # other functions

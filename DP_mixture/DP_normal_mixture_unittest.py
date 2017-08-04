@@ -83,6 +83,15 @@ class TestElbo(unittest.TestCase):
         err = np.abs(x - y)
         self.assertTrue(err < std_error * deviations)
 
+    def test_wishart_entropy(self):
+        wishart_scale = np.linalg.inv(vb_params['global']['inv_wishart_scale'].get())
+        wishart_dof = vb_params['global']['wishart_dof'].get()[0]
+        truth = osp.stats.wishart.entropy(scale = wishart_scale, df = wishart_dof)
+
+        test = dp.wishart_entropy(e_logdet_info_x, e_info_x, dof)
+
+        assert np.abs(truth - test) <= 1e-10
+
     def test_dp_prior(self):
         dp_prior_computed = dp.dp_prior(alpha, e_log_1mv) \
                 - e_log_1mv.shape[0] * osp.special.betaln(1, alpha)
@@ -193,7 +202,7 @@ class TestCaviUpdates(unittest.TestCase):
 
     def test_z_update(self):
         # our manual update
-        test_z_update = dp.z_update(mu, mu2, x, e_info_x, e_logdet_info_x, e_log_v, e_log_1mv)
+        test_z_update = dp.z_update(mu, mu2, x, e_info_x, e_log_v, e_log_1mv)
 
         # autograd update
         get_auto_z_update = grad(dp.e_loglik_full, 6)
@@ -205,8 +214,8 @@ class TestCaviUpdates(unittest.TestCase):
         log_const = sp.misc.logsumexp(auto_z_update, axis = 1)
         auto_z_update = np.exp(auto_z_update - log_const[:, None])
 
-        #print(auto_z_update[0:5, :])
-        #print(test_z_update[0:5, :])
+        print(auto_z_update[0:5, :])
+        print(test_z_update[0:5, :])
 
         self.assertTrue(\
                 np.sum(np.abs(auto_z_update - test_z_update)) <= 10**(-8))

@@ -17,8 +17,8 @@ def soft_thresh(e_z, ub, lb):
     renorm = np.sum(constrain, axis = 1)
     return constrain / renorm[:, None]
 
-def z_update(mu, mu2, x, e_info_x, e_logdet_info_x, e_log_v, e_log_1mv, fudge_factor = 0.0):
-    log_propto = dp.loglik_obs_by_nk(mu, mu2, x, e_info_x, e_logdet_info_x) + \
+def z_update(mu, mu2, x, e_info_x, e_log_v, e_log_1mv, fudge_factor = 0.0):
+    log_propto = dp.loglik_obs_by_nk(mu, mu2, x, e_info_x) + \
                     dp.loglik_ind_by_k(e_log_v, e_log_1mv)
     log_denom = sp.misc.logsumexp(log_propto, axis = 1)
 
@@ -74,8 +74,9 @@ def wishart_updates(x, mu, mu2, e_z, prior_mu, prior_inv_wishart_scale, prior_wi
 
     dof_update = prior_wishart_dof + np.shape(x)[0] + k_approx
 
-    # there's some numerical issues in which the update is not exactly symmetric
+    # there's some numerical issue in which the update is not exactly symmetric
     if np.any(np.abs(inv_scale_update - inv_scale_update.T) >= 1e-10):
+        print('wishart scale not symmetric?')
         print(inv_scale_update - inv_scale_update.T)
 
     inv_scale_update = 0.5 * (inv_scale_update + inv_scale_update.T)
@@ -85,8 +86,10 @@ def wishart_updates(x, mu, mu2, e_z, prior_mu, prior_inv_wishart_scale, prior_wi
 
 def run_cavi(model, init_par_vec, max_iter = 100, tol = 1e-8, disp = True):
 
+    # the data
     x = model.x
 
+    # the prior parameters
     prior_mu = model.prior_mu
     prior_wishart_dof = model.prior_dof
     prior_inv_wishart_scale = model.prior_inv_wishart_scale
@@ -99,6 +102,9 @@ def run_cavi(model, init_par_vec, max_iter = 100, tol = 1e-8, disp = True):
     kl = np.zeros(max_iter)
     diff = -10
 
+    e_info_x = np.linalg.inv(model.vb_params['global']['inv_wishart_scale'].get())\
+                * model.vb_params['global']['wishart_dof'].get()
+
     for i in range(max_iter):
 
         # tau update
@@ -107,8 +113,9 @@ def run_cavi(model, init_par_vec, max_iter = 100, tol = 1e-8, disp = True):
         model.vb_params['global']['v_sticks'].alpha.set(tau_new)
 
         # mu update
-        e_info_x = np.linalg.inv(model.vb_params['global']['inv_wishart_scale'].get())\
-                    * model.vb_params['global']['wishart_dof'].get()
+        #e_info_x = np.linalg.inv(model.vb_params['global']['inv_wishart_scale'].get())\
+        #            * model.vb_params['global']['wishart_dof'].get()
+
         mu_new, info_new = mu_update(x, e_z, prior_mu, e_info_x, kappa)
         model.vb_params['global']['mu'].set(mu_new)
         model.vb_params['global']['info_mu'].set(info_new)
@@ -127,11 +134,10 @@ def run_cavi(model, init_par_vec, max_iter = 100, tol = 1e-8, disp = True):
         # z update
         e_log_v = model.vb_params['global']['v_sticks'].e_log()[:,0] # E[log v]
         e_log_1mv = model.vb_params['global']['v_sticks'].e_log()[:,1] # E[log 1 - v]
-        e_info_x = np.linalg.inv(inv_wishart_scale_new) * wishart_dof_new
-        e_logdet_info_x = dp.get_wishart_e_logdet(e_info_x/wishart_dof_new, wishart_dof_new)
+        e_info_x = np.linalg.inv(model.vb_params['global']['inv_wishart_scale'].get())\
+                    * model.vb_params['global']['wishart_dof'].get()
 
-        e_z_new = z_update(mu, mu2, x, e_info_x, e_logdet_info_x, \
-                            e_log_v, e_log_1mv)
+        e_z_new = z_update(mu, mu2, x, e_info_x, e_log_v, e_log_1mv)
         model.vb_params['local']['e_z'].set(e_z_new)
 
         # evaluate elbo
