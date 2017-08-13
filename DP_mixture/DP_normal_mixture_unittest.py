@@ -19,6 +19,7 @@ from VariationalBayes.ParameterDictionary import ModelParamsDict
 from VariationalBayes.Parameters import ScalarParam, VectorParam, ArrayParam
 from VariationalBayes.MultinomialParams import SimplexParam
 from VariationalBayes.DirichletParams import DirichletParamArray
+from VariationalBayes.WishartParams import WishartParam
 from VariationalBayes.MatrixParameters import PosDefMatrixParam, PosDefMatrixParamVector
 from VariationalBayes.SparseObjectives import SparseObjective, Objective
 
@@ -40,7 +41,7 @@ prior_mu = np.random.random(x_dim)
 prior_inv_wishart_scale = np.random.random(x_dim)
 prior_inv_wishart_scale = np.dot(prior_inv_wishart_scale, prior_inv_wishart_scale)
 
-prior_wishart_dof = x_dim + 3
+prior_dof = x_dim + 3
 kappa = 1.5
 
 # set up vb model
@@ -52,9 +53,7 @@ global_params.push_param(
 global_params.push_param(
     DirichletParamArray(name='v_sticks', shape=(k_approx - 1, 2))) # betas
 global_params.push_param(
-    PosDefMatrixParam(name='inv_wishart_scale', size = x_dim)) # wishart
-global_params.push_param(
-    ScalarParam(name='wishart_dof', lb = x_dim - 1))
+    WishartParam(name = 'wishart', size = x_dim))
 
 local_params = ModelParamsDict('local')
 local_params.push_param(
@@ -84,10 +83,9 @@ class TestElbo(unittest.TestCase):
         self.assertTrue(err < std_error * deviations)
 
     def test_wishart_entropy(self):
-        wishart_scale = np.linalg.inv(vb_params['global']['inv_wishart_scale'].get())
-        wishart_dof = vb_params['global']['wishart_dof'].get()[0]
+        wishart_scale = vb_params['global']['wishart'].params['v'].get()
+        wishart_dof = vb_params['global']['wishart'].params['df'].get()[0]
         truth = osp.stats.wishart.entropy(scale = wishart_scale, df = wishart_dof)
-
         test = dp.wishart_entropy(e_logdet_info_x, e_info_x, dof)
 
         assert np.abs(truth - test) <= 1e-10
@@ -185,14 +183,14 @@ class TestCaviUpdates(unittest.TestCase):
         get_mu_update = grad(dp.e_loglik_full, 1)
         get_info_mu_update = grad(dp.e_loglik_full, 2)
 
-        auto_nat_mu_update = get_mu_update(x, mu, mu2, tau, e_log_v, e_log_1mv,\
-                        e_z, e_info_x, e_logdet_info_x, prior_mu,
-                        prior_inv_wishart_scale, kappa, prior_wishart_dof, alpha)
+        auto_nat_mu_update = get_mu_update(x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
+                            e_info_x, e_logdet_info_x, prior_mu,
+                            prior_inv_wishart_scale, kappa, prior_dof, alpha)
 
         auto_info_mu_update = - 2.0 * get_info_mu_update(x, mu, mu2, tau,
-                        e_log_v, e_log_1mv, e_z,
-                        e_info_x, e_logdet_info_x, prior_mu,
-                        prior_inv_wishart_scale, kappa, prior_wishart_dof, alpha)
+                            e_log_v, e_log_1mv, e_z,
+                            e_info_x, e_logdet_info_x, prior_mu,
+                            prior_inv_wishart_scale, kappa, prior_dof, alpha)
 
         auto_mu_update = np.array([np.linalg.solve(auto_info_mu_update[k], auto_nat_mu_update[k,:])
                                 for k in range(k_approx)])
@@ -209,13 +207,13 @@ class TestCaviUpdates(unittest.TestCase):
         auto_z_update = get_auto_z_update(
                 x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
                 e_info_x, e_logdet_info_x, prior_mu,
-                prior_inv_wishart_scale, kappa, prior_wishart_dof, alpha)
+                prior_inv_wishart_scale, kappa, prior_dof, alpha)
 
         log_const = sp.misc.logsumexp(auto_z_update, axis = 1)
         auto_z_update = np.exp(auto_z_update - log_const[:, None])
 
-        print(auto_z_update[0:5, :])
-        print(test_z_update[0:5, :])
+        #print(auto_z_update[0:5, :])
+        #print(test_z_update[0:5, :])
 
         self.assertTrue(\
                 np.sum(np.abs(auto_z_update - test_z_update)) <= 10**(-8))
@@ -228,13 +226,11 @@ class TestCaviUpdates(unittest.TestCase):
         get_tau2_update = grad(dp.e_loglik_full, 5)
 
         auto_tau1_update = get_tau1_update(x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
-                                            e_info_x, e_logdet_info_x, prior_mu,
-                                            prior_inv_wishart_scale, kappa,
-                                            prior_wishart_dof, alpha) + 1
+                            e_info_x, e_logdet_info_x, prior_mu,
+                            prior_inv_wishart_scale, kappa, prior_dof, alpha) + 1
         auto_tau2_update = get_tau2_update(x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
-                                            e_info_x, e_logdet_info_x, prior_mu,
-                                            prior_inv_wishart_scale, kappa,
-                                            prior_wishart_dof, alpha) + 1
+                            e_info_x, e_logdet_info_x, prior_mu,
+                            prior_inv_wishart_scale, kappa, prior_dof, alpha) + 1
 
         self.assertTrue(\
                 np.sum(np.abs(test_tau_update[:,0] - auto_tau1_update)) <= 10**(-8))
@@ -276,7 +272,7 @@ class TestCaviUpdates(unittest.TestCase):
     """
 
 
-"""
+
 class TestFunctionalPerturbation(unittest.TestCase):
     def u(self, x):
         return(3.0 * x)
@@ -304,7 +300,7 @@ class TestFunctionalPerturbation(unittest.TestCase):
         #                osp.special.betaln(1, alpha)
 
         test_moment = fun_pert.dp_prior_perturbed\
-                            (tau, alpha, n_grid = 10**6)
+                            (tau, alpha, n_grid = 10**7)
                             # here, recall that the default perturbation is 0
 
         print(np.abs(true_moment - test_moment))
@@ -313,16 +309,18 @@ class TestFunctionalPerturbation(unittest.TestCase):
     def test_elbo(self):
         # without perturbation, check against old elbo computations
         test_elbo = fun_pert.compute_elbo_perturbed(\
-                x, mu, mu2, info, tau, e_log_v, e_log_1mv, e_z,
-                prior_mu, prior_info, info_x, alpha, n_grid = 10**6)
+                x, mu, mu2, info_mu, tau, e_log_v, e_log_1mv, e_z,
+                e_info_x, e_logdet_info_x, dof, prior_mu,
+                prior_inv_wishart_scale, kappa, prior_dof, alpha, n_grid = 10**7)
 
-        true_elbo = dp.compute_elbo(x, mu, mu2, info, tau, e_log_v, e_log_1mv,
-                    e_z, prior_mu, prior_info, info_x, alpha) - \
+        true_elbo = dp.compute_elbo(x, mu, mu2, info_mu, tau, e_log_v, e_log_1mv, e_z,
+                            e_info_x, e_logdet_info_x, dof, prior_mu,
+                            prior_inv_wishart_scale, kappa, prior_dof, alpha) - \
                     (k_approx - 1) * osp.special.betaln(1, alpha)
 
         print(np.abs(test_elbo - true_elbo))
         self.assertTrue(np.abs(test_elbo - true_elbo) <= 10**(-6))
-"""
+
 
 if __name__ == '__main__':
     unittest.main()
