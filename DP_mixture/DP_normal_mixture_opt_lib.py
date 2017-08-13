@@ -71,17 +71,18 @@ def wishart_updates(x, mu, mu2, e_z, prior_mu, prior_inv_wishart_scale, prior_wi
                     + np.einsum('kij, k -> ij', outer_mu, z_sum)
 
     inv_scale_update = prior_inv_wishart_scale + prior_normal_term + data_lh_term
+    scale_update = np.linalg.inv(inv_scale_update)
 
     dof_update = prior_wishart_dof + np.shape(x)[0] + k_approx
 
     # there's some numerical issue in which the update is not exactly symmetric
-    if np.any(np.abs(inv_scale_update - inv_scale_update.T) >= 1e-10):
+    if np.any(np.abs(scale_update - scale_update.T) >= 1e-10):
         print('wishart scale not symmetric?')
-        print(inv_scale_update - inv_scale_update.T)
+        print(scale_update - scale_update.T)
 
-    inv_scale_update = 0.5 * (inv_scale_update + inv_scale_update.T)
+    scale_update = 0.5 * (scale_update + scale_update.T)
 
-    return inv_scale_update, np.array([dof_update])
+    return scale_update, np.array([dof_update])
 
 
 def run_cavi(model, init_par_vec, max_iter = 100, tol = 1e-8, disp = True):
@@ -102,8 +103,7 @@ def run_cavi(model, init_par_vec, max_iter = 100, tol = 1e-8, disp = True):
     kl = np.zeros(max_iter)
     diff = -10
 
-    e_info_x = np.linalg.inv(model.vb_params['global']['inv_wishart_scale'].get())\
-                * model.vb_params['global']['wishart_dof'].get()
+    e_info_x = model.vb_params['global']['wishart'].e()
 
     for i in range(max_iter):
 
@@ -124,18 +124,17 @@ def run_cavi(model, init_par_vec, max_iter = 100, tol = 1e-8, disp = True):
         mu = model.vb_params['global']['mu'].get()
         mu2 = np.array([np.linalg.inv(info_new[k]) + np.outer(mu[k,:], mu[k,:]) \
                             for k in range(np.shape(mu)[0])])
-        inv_wishart_scale_new, wishart_dof_new = \
+        wishart_scale_new, wishart_dof_new = \
             wishart_updates(x, mu, mu2, e_z, prior_mu, \
                     prior_inv_wishart_scale, prior_wishart_dof, kappa)
 
-        model.vb_params['global']['inv_wishart_scale'].set(inv_wishart_scale_new)
-        model.vb_params['global']['wishart_dof'].set(wishart_dof_new)
+        model.vb_params['global']['wishart'].params['v'].set(wishart_scale_new)
+        model.vb_params['global']['wishart'].params['df'].set(wishart_dof_new)
 
         # z update
         e_log_v = model.vb_params['global']['v_sticks'].e_log()[:,0] # E[log v]
         e_log_1mv = model.vb_params['global']['v_sticks'].e_log()[:,1] # E[log 1 - v]
-        e_info_x = np.linalg.inv(model.vb_params['global']['inv_wishart_scale'].get())\
-                    * model.vb_params['global']['wishart_dof'].get()
+        e_info_x = model.vb_params['global']['wishart'].e()
 
         e_z_new = z_update(mu, mu2, x, e_info_x, e_log_v, e_log_1mv)
         model.vb_params['local']['e_z'].set(e_z_new)

@@ -246,11 +246,10 @@ def get_vb_params(vb_params):
     mu2 = np.array([np.linalg.inv(info_mu[k]) + np.outer(mu[k,:], mu[k,:]) \
                         for k in range(np.shape(mu)[0])])
 
-    dof = vb_params['global']['wishart_dof'].get()[0]
-    wishart_scale = np.linalg.inv(vb_params['global']['inv_wishart_scale'].get())
-    e_info_x = dof * wishart_scale
+    dof = vb_params['global']['wishart'].params['df'].get()[0]
+    e_info_x = vb_params['global']['wishart'].e()
 
-    e_logdet_info_x = get_wishart_e_logdet(wishart_scale, dof)
+    e_logdet_info_x = vb_params['global']['wishart'].e_log_det()
 
     tau = vb_params['global']['v_sticks'].alpha.get()
 
@@ -260,8 +259,9 @@ def get_vb_params(vb_params):
 def get_prior_params(prior_params):
     prior_mu = prior_params['prior_mu'].get()
 
-    prior_dof = prior_params['wishart_dof'].get()
-    prior_inv_wishart_scale = prior_params['inv_wishart_scale'].get()
+    prior_dof = prior_params['prior wishart'].params['df'].get()
+    prior_inv_wishart_scale = \
+                np.linalg.inv(prior_params['prior wishart'].params['v'].get())
 
     alpha = prior_params['alpha'].get()
     kappa = prior_params['kappa'].get()
