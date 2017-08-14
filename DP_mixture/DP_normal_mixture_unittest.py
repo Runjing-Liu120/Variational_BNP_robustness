@@ -19,37 +19,41 @@ from VariationalBayes.ParameterDictionary import ModelParamsDict
 from VariationalBayes.Parameters import ScalarParam, VectorParam, ArrayParam
 from VariationalBayes.MultinomialParams import SimplexParam
 from VariationalBayes.DirichletParams import DirichletParamArray
+from VariationalBayes.WishartParams import WishartParam
 from VariationalBayes.MatrixParameters import PosDefMatrixParam, PosDefMatrixParamVector
 from VariationalBayes.SparseObjectives import SparseObjective, Objective
 
-np.random.seed(12312)
+np.random.seed(45242)
 
 # DP parameters
 x_dim = 2
 k_approx = 5
 num_obs = 100
 
+# draw data
+true_info_x = np.random.random((x_dim, x_dim)) # 1.0 * np.eye(x_dim)
+true_info_x = np.dot(true_info_x.T, true_info_x)
+x = dp.draw_data(true_info_x, x_dim, k_approx, num_obs)[0]
+
 # prior parameters
 alpha = 1.2 # DP parameter
 prior_mu = np.random.random(x_dim)
-prior_info = np.random.random((x_dim, x_dim))
-prior_info = np.dot(prior_info.T, prior_info)
+prior_inv_wishart_scale = np.random.random(x_dim)
+prior_inv_wishart_scale = np.dot(prior_inv_wishart_scale, prior_inv_wishart_scale)
 
-info_x = np.random.random((x_dim, x_dim)) # 1.0 * np.eye(x_dim)
-info_x = np.dot(info_x.T, info_x)
-
-# draw data
-x = dp.draw_data(info_x, x_dim, k_approx, num_obs)[0]
-
+prior_dof = x_dim + 3
+kappa = 1.5
 
 # set up vb model
 global_params = ModelParamsDict('global')
 global_params.push_param(
-    PosDefMatrixParamVector(name='info', length=k_approx, matrix_size=x_dim)) # variational variances
+    PosDefMatrixParamVector(name='info_mu', length=k_approx, matrix_size=x_dim)) # variational variances
 global_params.push_param(
     ArrayParam(name='mu', shape=(k_approx, x_dim))) # variational means
 global_params.push_param(
-    DirichletParamArray(name='v_sticks', shape=(k_approx - 1, 2)))
+    DirichletParamArray(name='v_sticks', shape=(k_approx - 1, 2))) # betas
+global_params.push_param(
+    WishartParam(name = 'wishart', size = x_dim))
 
 local_params = ModelParamsDict('local')
 local_params.push_param(
@@ -63,18 +67,28 @@ vb_params.push_param(local_params)
 vb_params.set_free(np.random.random(vb_params.free_size()))
 
 # get moments
-e_log_v, e_log_1mv, e_z, mu, mu2, info, tau = dp.get_vb_params(vb_params)
+e_log_v, e_log_1mv, e_z, mu, mu2, info_mu, tau,\
+            e_info_x, e_logdet_info_x, dof = dp.get_vb_params(vb_params)
 
 # draw variational samples
 num_samples = 10**5
-v_samples, pi_samples, mu_samples, z_samples = \
-            dp.variational_samples(mu, info, tau, e_z, num_samples)
+v_samples, pi_samples, mu_samples, z_samples, info_samples = \
+            dp.variational_samples(mu, info_mu, tau, e_z, \
+                        e_info_x/dof, dof, num_samples)
 
 
 class TestElbo(unittest.TestCase):
     def assert_rel_close(self, x, y, std_error, deviations = 3):
         err = np.abs(x - y)
         self.assertTrue(err < std_error * deviations)
+
+    def test_wishart_entropy(self):
+        wishart_scale = vb_params['global']['wishart'].params['v'].get()
+        wishart_dof = vb_params['global']['wishart'].params['df'].get()[0]
+        truth = osp.stats.wishart.entropy(scale = wishart_scale, df = wishart_dof)
+        test = dp.wishart_entropy(e_logdet_info_x, e_info_x, dof)
+
+        assert np.abs(truth - test) <= 1e-10
 
     def test_dp_prior(self):
         dp_prior_computed = dp.dp_prior(alpha, e_log_1mv) \
@@ -87,13 +101,31 @@ class TestElbo(unittest.TestCase):
 
         self.assertTrue(np.abs(dp_prior_computed - dp_prior_samples_mean) < 0.01)
 
+    def test_wishart_logdet(self):
+        logdet_samples = np.linalg.slogdet(info_samples)[1]
+        logdet_samples_mean = np.mean(np.linalg.slogdet(info_samples)[1])
+        logdet_samples_std = np.std(np.linalg.slogdet(info_samples)[1])
+
+        logdet_computed = e_logdet_info_x
+
+        print(logdet_computed)
+        print(logdet_samples_mean)
+        print(logdet_samples_std / np.sqrt(num_samples))
+
+        self.assert_rel_close(logdet_computed, logdet_samples_mean, \
+                    logdet_samples_std / np.sqrt(num_samples))
+
+
     def test_normal_prior(self):
-        normal_prior_computed = dp.normal_prior(mu, mu2, prior_mu, prior_info)\
-            - 0.5 * np.dot(np.dot(prior_mu, prior_info), prior_mu) * k_approx
+        normal_prior_computed =\
+            dp.normal_prior(mu, mu2, prior_mu, e_info_x, e_logdet_info_x, kappa)
+
         normal_prior_samples = \
                 [- 0.5 * np.trace(\
-                    np.dot(np.dot(mu_samples[i,:,:] - prior_mu, prior_info), \
+                    np.dot(np.dot(mu_samples[i,:,:] - prior_mu, \
+                    info_samples[i] * kappa), \
                     (mu_samples[i,:,:] - prior_mu).T))
+                    + k_approx / 2 * np.linalg.slogdet(info_samples[i])[1]
                     for i in range(mu_samples.shape[0])]
 
         normal_prior_samples_mean = np.mean(normal_prior_samples)
@@ -105,7 +137,6 @@ class TestElbo(unittest.TestCase):
 
         self.assert_rel_close(normal_prior_computed, normal_prior_samples_mean, \
                     normal_prior_samples_std / np.sqrt(num_samples))
-
 
     def test_z_lh(self):
         z_lh_samples = np.array([np.sum(osp.stats.multinomial.logpmf(\
@@ -119,18 +150,20 @@ class TestElbo(unittest.TestCase):
         self.assert_rel_close(z_lh_computed, z_lh_samples_mean, \
                     z_lh_samples_std / np.sqrt(num_samples))
 
+
     def test_data_lh(self):
 
         data_lh_samples = np.zeros(num_samples)
         for i in range(num_samples):
             x_center = x - np.dot(z_samples[i,:,:], mu_samples[i,:,:])
             data_lh_samples[i] = - 0.5 * np.trace(\
-                    np.dot(np.dot(x_center, info_x), x_center.T))
+                    np.dot(np.dot(x_center, info_samples[i]), x_center.T))\
+                    + np.shape(x)[0] / 2 * np.linalg.slogdet(info_samples[i])[1]
+
         data_lh_samples_mean = np.mean(data_lh_samples)
         data_lh_samples_std = np.std(data_lh_samples)
 
-        data_lh_computed = dp.loglik_obs(e_z, mu, mu2, x, info_x) \
-                        - 0.5 * np.trace(np.dot(np.dot(x, info_x), x.T))
+        data_lh_computed = dp.loglik_obs(e_z, mu, mu2, x, e_info_x, e_logdet_info_x)
 
         print(data_lh_samples_mean)
         print(data_lh_samples_std / np.sqrt(num_samples))
@@ -140,22 +173,47 @@ class TestElbo(unittest.TestCase):
             data_lh_samples_std / np.sqrt(num_samples))
 
 
-class TestCaviUpdates(unittest.TestCase):
-    def test_z_update(self):
 
+class TestCaviUpdates(unittest.TestCase):
+    def test_mu_update(self):
         # our manual update
-        test_z_update = dp.z_update(mu, mu2, x, info_x, e_log_v, e_log_1mv)
+        test_mu_update, test_info_mu_update = \
+            dp_opt.mu_update(x, e_z, prior_mu, e_info_x, kappa)
+
+        get_mu_update = grad(dp.e_loglik_full, 1)
+        get_info_mu_update = grad(dp.e_loglik_full, 2)
+
+        auto_nat_mu_update = get_mu_update(x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
+                            e_info_x, e_logdet_info_x, prior_mu,
+                            prior_inv_wishart_scale, kappa, prior_dof, alpha)
+
+        auto_info_mu_update = - 2.0 * get_info_mu_update(x, mu, mu2, tau,
+                            e_log_v, e_log_1mv, e_z,
+                            e_info_x, e_logdet_info_x, prior_mu,
+                            prior_inv_wishart_scale, kappa, prior_dof, alpha)
+
+        auto_mu_update = np.array([np.linalg.solve(auto_info_mu_update[k], auto_nat_mu_update[k,:])
+                                for k in range(k_approx)])
+
+        assert np.sum(np.abs(test_mu_update - auto_mu_update)) <= 1e-10
+
+
+    def test_z_update(self):
+        # our manual update
+        test_z_update = dp.z_update(mu, mu2, x, e_info_x, e_log_v, e_log_1mv)
 
         # autograd update
         get_auto_z_update = grad(dp.e_loglik_full, 6)
         auto_z_update = get_auto_z_update(
                 x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
-                prior_mu, prior_info, info_x, alpha)
+                e_info_x, e_logdet_info_x, prior_mu,
+                prior_inv_wishart_scale, kappa, prior_dof, alpha)
+
         log_const = sp.misc.logsumexp(auto_z_update, axis = 1)
         auto_z_update = np.exp(auto_z_update - log_const[:, None])
 
-        # print(auto_z_update[0:5, :])
-        # print(test_z_update[0:5, :])
+        #print(auto_z_update[0:5, :])
+        #print(test_z_update[0:5, :])
 
         self.assertTrue(\
                 np.sum(np.abs(auto_z_update - test_z_update)) <= 10**(-8))
@@ -168,14 +226,51 @@ class TestCaviUpdates(unittest.TestCase):
         get_tau2_update = grad(dp.e_loglik_full, 5)
 
         auto_tau1_update = get_tau1_update(x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
-                            prior_mu, prior_info, info_x, alpha) + 1
+                            e_info_x, e_logdet_info_x, prior_mu,
+                            prior_inv_wishart_scale, kappa, prior_dof, alpha) + 1
         auto_tau2_update = get_tau2_update(x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
-                            prior_mu, prior_info, info_x, alpha) + 1
+                            e_info_x, e_logdet_info_x, prior_mu,
+                            prior_inv_wishart_scale, kappa, prior_dof, alpha) + 1
 
         self.assertTrue(\
                 np.sum(np.abs(test_tau_update[:,0] - auto_tau1_update)) <= 10**(-8))
         self.assertTrue(\
                 np.sum(np.abs(test_tau_update[:,1] - auto_tau2_update)) <= 10**(-8))
+    """
+    def test_wishart_update(self):
+        test_wishart_scale, test_dof, prior_normal_term =\
+            dp_opt.wishart_updates(x, mu, mu2, e_z, prior_mu, \
+                    prior_inv_wishart_scale, prior_wishart_dof, kappa)
+
+        get_auto_dof_update = grad(dp.e_loglik_full, 8)
+        get_auto_wishart_scale_update = grad(dp.e_loglik_full, 7)
+
+        auto_dof_update = get_auto_dof_update\
+                            (x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
+                                    e_info_x, e_logdet_info_x, prior_mu,
+                                    prior_inv_wishart_scale, kappa,
+                                    prior_wishart_dof, alpha)
+        auto_wishart_scale_update = get_auto_wishart_scale_update\
+                            (x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
+                                    e_info_x, e_logdet_info_x, prior_mu,
+                                    prior_inv_wishart_scale, kappa,
+                                    prior_wishart_dof, alpha)
+
+        #print(test_dof)
+        #print(2 * auto_dof_update + np.shape(x)[1] + 1)
+
+        print(- 2.0 * auto_wishart_scale_update)
+        print(np.linalg.inv(test_wishart_scale))
+
+
+
+        get_normal_term = grad(dp.normal_prior, 3)
+        normal_term = get_normal_term(mu, mu2, prior_mu, e_info_x, e_logdet_info_x, kappa)
+
+        print('\n', -2.0 * normal_term)
+        print(prior_normal_term)
+    """
+
 
 
 class TestFunctionalPerturbation(unittest.TestCase):
@@ -205,7 +300,7 @@ class TestFunctionalPerturbation(unittest.TestCase):
         #                osp.special.betaln(1, alpha)
 
         test_moment = fun_pert.dp_prior_perturbed\
-                            (tau, alpha, n_grid = 10**6)
+                            (tau, alpha, n_grid = 10**7)
                             # here, recall that the default perturbation is 0
 
         print(np.abs(true_moment - test_moment))
@@ -214,15 +309,18 @@ class TestFunctionalPerturbation(unittest.TestCase):
     def test_elbo(self):
         # without perturbation, check against old elbo computations
         test_elbo = fun_pert.compute_elbo_perturbed(\
-                x, mu, mu2, info, tau, e_log_v, e_log_1mv, e_z,
-                prior_mu, prior_info, info_x, alpha, n_grid = 10**6)
+                x, mu, mu2, info_mu, tau, e_log_v, e_log_1mv, e_z,
+                e_info_x, e_logdet_info_x, dof, prior_mu,
+                prior_inv_wishart_scale, kappa, prior_dof, alpha, n_grid = 10**7)
 
-        true_elbo = dp.compute_elbo(x, mu, mu2, info, tau, e_log_v, e_log_1mv,
-                    e_z, prior_mu, prior_info, info_x, alpha) - \
+        true_elbo = dp.compute_elbo(x, mu, mu2, info_mu, tau, e_log_v, e_log_1mv, e_z,
+                            e_info_x, e_logdet_info_x, dof, prior_mu,
+                            prior_inv_wishart_scale, kappa, prior_dof, alpha) - \
                     (k_approx - 1) * osp.special.betaln(1, alpha)
 
         print(np.abs(test_elbo - true_elbo))
         self.assertTrue(np.abs(test_elbo - true_elbo) <= 10**(-6))
+
 
 if __name__ == '__main__':
     unittest.main()

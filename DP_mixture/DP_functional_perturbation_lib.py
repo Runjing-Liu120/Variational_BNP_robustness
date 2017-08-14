@@ -5,6 +5,7 @@ import autograd.scipy as sp
 from autograd import grad, hessian, hessian_vector_product, hessian, jacobian
 
 import DP_normal_mixture_lib as dp
+import DP_normal_mixture_opt_lib as dp_opt
 
 import scipy as osp
 from scipy import optimize
@@ -45,26 +46,32 @@ def dp_prior_perturbed(tau, alpha, u = lambda x : 0.0 * x, \
 
 
 def e_loglik_full_perturbed(x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
-                    prior_mu, prior_info, info_x, alpha, \
+                    e_info_x, e_logdet_info_x, prior_mu,
+                    prior_inv_wishart_scale, kappa, prior_dof, alpha, \
                     u = lambda x : 0.0 * x, n_grid = 10000):
     # combining the pieces, compute the full expected log likelihood
 
     prior = dp_prior_perturbed(tau, alpha, u = u, n_grid = n_grid) \
-                + dp.normal_prior(mu, mu2, prior_mu, prior_info)
+            + dp.normal_prior(mu, mu2, prior_mu, e_info_x, e_logdet_info_x, kappa)\
+            + dp.wishart_prior(e_info_x, e_logdet_info_x, \
+                        prior_inv_wishart_scale, prior_dof)
 
-    return dp.loglik_obs(e_z, mu, mu2, x, info_x) \
+    return dp.loglik_obs(e_z, mu, mu2, x, e_info_x, e_logdet_info_x) \
                 + dp.loglik_ind(e_z, e_log_v, e_log_1mv) + prior
 
-def compute_elbo_perturbed(x, mu, mu2, info, tau, e_log_v, e_log_1mv, e_z,
-                    prior_mu, prior_info, info_x, alpha, \
+def compute_elbo_perturbed(x, mu, mu2, info_mu, tau, e_log_v, e_log_1mv, e_z,
+                    e_info_x, e_logdet_info_x, dof, prior_mu,
+                    prior_inv_wishart_scale, kappa, prior_dof, alpha,
                     u = lambda x : 0.0 * x, n_grid = 10000):
 
     # entropy terms
-    entropy = dp.mu_entropy(info) + dp.beta_entropy(tau) \
-                    + dp.multinom_entropy(e_z)
+    entropy = dp.mu_entropy(info_mu) + dp.beta_entropy(tau) \
+                + dp.multinom_entropy(e_z) \
+                + dp.wishart_entropy(e_logdet_info_x, e_info_x, dof)
 
     return e_loglik_full_perturbed(x, mu, mu2, tau, e_log_v, e_log_1mv, e_z,
-                        prior_mu, prior_info, info_x, alpha, \
+                        e_info_x, e_logdet_info_x, prior_mu,
+                        prior_inv_wishart_scale, kappa, prior_dof, alpha, \
                         u = u, n_grid = n_grid) + entropy
 
 
@@ -74,26 +81,30 @@ class PerturbedKL(object):
         self.vb_params = deepcopy(vb_params)
         self.u = u
 
-        self.prior_mu, self.prior_info, self.info_x, self.alpha \
-                    = dp.get_prior_params(prior_params)
+        self.prior_mu, self.prior_dof, self.prior_inv_wishart_scale, \
+            self.alpha, self.kappa = dp.get_prior_params(prior_params)
 
     def set_optimal_z(self):
-        e_log_v, e_log_1mv, e_z, mu, mu2, info, tau \
-                        = dp.get_vb_params(self.vb_params)
+        e_log_v, e_log_1mv, e_z, mu, mu2, info_mu, tau,\
+                    e_info_x, e_logdet_info_x, dof = \
+                    dp.get_vb_params(self.vb_params)
 
         # optimize z
-        e_z_opt = dp.z_update(mu, mu2, self.x, self.info_x, e_log_v, e_log_1mv)
+        e_z_opt = dp_opt.z_update(mu, mu2, self.x, e_info_x, e_log_v, e_log_1mv)
         self.vb_params['local']['e_z'].set(e_z_opt)
 
-    def pertubed_kl(self):
-        e_log_v, e_log_1mv, _, mu, mu2, info, tau = \
-                        dp.get_vb_params(self.vb_params)
+    def perturbed_kl(self):
+        e_log_v, e_log_1mv, _, mu, mu2, info_mu, tau,\
+                    e_info_x, e_logdet_info_x, dof = \
+                    dp.get_vb_params(self.vb_params)
 
         # optimize z
-        e_z = dp.z_update(mu, mu2, self.x, self.info_x, e_log_v, e_log_1mv, \
-                                        fudge_factor = 10**(-10))
-        elbo = compute_elbo_perturbed(self.x, mu, mu2, info, tau, e_log_v, \
-                            e_log_1mv, e_z, self.prior_mu, self.prior_info, \
-                            self.info_x, self.alpha, u = self.u, n_grid = 10000)
+        e_z = dp_opt.z_update(mu, mu2, self.x, e_info_x, e_log_v, e_log_1mv)
+
+        elbo = compute_elbo_perturbed(self.x, mu, mu2, info_mu, tau, e_log_v,
+                            e_log_1mv, e_z, e_info_x, e_logdet_info_x, dof,
+                            self.prior_mu, self.prior_inv_wishart_scale,
+                            self.kappa, self.prior_dof, self.alpha,
+                            u = self.u, n_grid = 10000)
 
         return - 1.0 * elbo
